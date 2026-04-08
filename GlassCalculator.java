@@ -1,5 +1,4 @@
-package JAVA.Methods;
-
+//add package file of yours own
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
