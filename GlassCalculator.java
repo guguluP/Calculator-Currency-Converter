@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * GlassCalculator - Final Project Version
- * With Improved Stylish Currency Converter Dropdowns
+ * With Improved Stylish Currency Converter + FIXED & PERFECT SWAP BUTTON
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
 
@@ -34,7 +34,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private double lastOperand = 0.0;
     private boolean isRepeatPossible = false;
 
-    // ====================== OPTIMIZED GLOBAL CURRENCY CACHE ======================
     private static class CachedRates {
         final Map<String, Double> rates;
         final long timestamp;
@@ -101,9 +100,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    display.selectAll();
-                }
+                if (e.getClickCount() == 2) display.selectAll();
             }
         });
 
@@ -133,17 +130,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         try {
             Image icnsIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("/AppIcon.icns"));
             if (icnsIcon != null) setIconImage(icnsIcon);
-            else {
-                icnsIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("AppIcon.icns"));
-                if (icnsIcon != null) setIconImage(icnsIcon);
-            }
+            else icnsIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("AppIcon.icns"));
             if (icnsIcon == null) {
                 Image pngIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("/AppIcon.png"));
                 if (pngIcon != null) setIconImage(pngIcon);
             }
-            try {
-                if (icnsIcon != null) java.awt.Taskbar.getTaskbar().setIconImage(icnsIcon);
-            } catch (Exception ignored) {}
+            if (icnsIcon != null) java.awt.Taskbar.getTaskbar().setIconImage(icnsIcon);
         } catch (Exception ignored) {}
     }
 
@@ -385,10 +377,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 ButtonModel model = btn.getModel();
                 model.setPressed(true);
                 btn.repaint();
-                Timer timer = new Timer(160, ev -> {
-                    model.setPressed(false);
-                    btn.repaint();
-                });
+                Timer timer = new Timer(160, ev -> { model.setPressed(false); btn.repaint(); });
                 timer.setRepeats(false);
                 timer.start();
                 return;
@@ -439,8 +428,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             if (isRepeatPossible && startNewInput && !lastOperator.isEmpty()) {
                 double currentValue = Double.parseDouble(currentText);
                 double newResult = applyLastOperation(currentValue);
-                String formatted = formatResult(newResult);
-                display.setText(formatted);
+                display.setText(formatResult(newResult));
             } else {
                 double result = evaluateExpression(currentText);
                 String formatted = formatResult(result);
@@ -459,19 +447,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     }
 
     private void extractLastOperation(String expr) {
-        String cleaned = expr.replace(" ", "")
-                .replace("×", "*")
-                .replace("÷", "/")
-                .replace("−", "-")
-                .replace("xʸ", "^");
+        String cleaned = expr.replace(" ", "").replace("×", "*").replace("÷", "/").replace("−", "-").replace("xʸ", "^");
         lastOperator = "";
         lastOperand = 0.0;
         int lastOpIndex = -1;
         char lastOpChar = 0;
         for (int i = cleaned.length() - 1; i >= 0; i--) {
             char c = cleaned.charAt(i);
-            if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') &&
-                    i > 0 && i < cleaned.length() - 1) {
+            if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') && i > 0 && i < cleaned.length() - 1) {
                 lastOpIndex = i;
                 lastOpChar = c;
                 break;
@@ -482,11 +465,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         int numEnd = 0;
         while (numEnd < rightPart.length()) {
             char ch = rightPart.charAt(numEnd);
-            if (Character.isDigit(ch) || ch == '.' || (numEnd == 0 && ch == '-')) {
-                numEnd++;
-            } else {
-                break;
-            }
+            if (Character.isDigit(ch) || ch == '.' || (numEnd == 0 && ch == '-')) numEnd++;
+            else break;
         }
         if (numEnd > 0) {
             try {
@@ -508,11 +488,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     }
 
     private double evaluateExpression(String expr) throws Exception {
-        String cleaned = expr.replace(" ", "")
-                .replace("×", "*")
-                .replace("÷", "/")
-                .replace("−", "-")
-                .replace("xʸ", "^");
+        String cleaned = expr.replace(" ", "").replace("×", "*").replace("÷", "/").replace("−", "-").replace("xʸ", "^");
         return new ExpressionParser(cleaned).parse();
     }
 
@@ -550,11 +526,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     double next = parseFactor();
                     value = (op == '*') ? value * next : (next == 0 ? 0 : value / next);
                 } else if (isStartOfFactor()) {
-                    double next = parseFactor();
-                    value *= next;
-                } else {
-                    break;
-                }
+                    value *= parseFactor();
+                } else break;
             }
             return value;
         }
@@ -566,20 +539,16 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             if (c == 'e' && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos + 1)))) return true;
             String remaining = input.substring(pos);
             return remaining.startsWith("sin(") || remaining.startsWith("cos(") ||
-                    remaining.startsWith("tan(") || remaining.startsWith("asin(") ||
-                    remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
-                    remaining.startsWith("log(") || remaining.startsWith("ln(");
+                   remaining.startsWith("tan(") || remaining.startsWith("asin(") ||
+                   remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
+                   remaining.startsWith("log(") || remaining.startsWith("ln(");
         }
 
         private double parseFactor() throws Exception {
             double value = parsePrimary();
-            while (pos < input.length()) {
-                char op = input.charAt(pos);
-                if (op == '^') {
-                    pos++;
-                    double exp = parseFactor();
-                    value = Math.pow(value, exp);
-                } else break;
+            while (pos < input.length() && input.charAt(pos) == '^') {
+                pos++;
+                value = Math.pow(value, parseFactor());
             }
             return value;
         }
@@ -650,9 +619,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         int count = prefs.getInt("historyCount", 0);
         for (int i = 0; i < count; i++) {
             String entry = prefs.get("history_" + i, null);
-            if (entry != null && !entry.trim().isEmpty()) {
-                history.add(entry);
-            }
+            if (entry != null && !entry.trim().isEmpty()) history.add(entry);
         }
     }
 
@@ -660,15 +627,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         int oldCount = prefs.getInt("historyCount", 0);
         prefs.putInt("historyCount", history.size());
-        for (int i = 0; i < history.size(); i++) {
-            prefs.put("history_" + i, history.get(i));
-        }
-        for (int i = history.size(); i < oldCount + 20; i++) {
-            prefs.remove("history_" + i);
-        }
+        for (int i = 0; i < history.size(); i++) prefs.put("history_" + i, history.get(i));
+        for (int i = history.size(); i < oldCount + 20; i++) prefs.remove("history_" + i);
     }
 
-    // ====================== IMPROVED CURRENCY CONVERTER WITH STYLISH DROPDOWNS ======================
+    // ====================== CURRENCY CONVERTER (Swap now perfect) ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
         dialog.setSize(440, 740);
@@ -681,7 +644,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         displayArea.setBackground(new Color(20, 20, 25));
         displayArea.setBorder(BorderFactory.createEmptyBorder(30, 20, 20, 20));
 
-        // Result Line
         JPanel resultLine = new JPanel(new BorderLayout(0, 0));
         resultLine.setBackground(new Color(20, 20, 25));
         resultLine.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
@@ -697,7 +659,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         resultLine.add(resultLabel, BorderLayout.CENTER);
         resultLine.add(toBox, BorderLayout.EAST);
 
-        // Swap Button
         JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 8));
         swapPanel.setBackground(new Color(20, 20, 25));
         JButton swapBtn = createGlassButton("↕");
@@ -706,7 +667,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         swapBtn.setPreferredSize(new Dimension(68, 68));
         swapPanel.add(swapBtn);
 
-        // Input Line
         JPanel inputLine = new JPanel(new BorderLayout(0, 0));
         inputLine.setBackground(new Color(20, 20, 25));
         inputLine.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -727,7 +687,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         inputLine.add(inputField, BorderLayout.CENTER);
         inputLine.add(fromBox, BorderLayout.EAST);
 
-        // Status Panel
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         statusPanel.setBackground(new Color(20, 20, 25));
         JLabel statusLabel = new JLabel("Live rates • Ready");
@@ -742,7 +701,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
         dialog.add(displayArea, BorderLayout.NORTH);
 
-        // Keypad
         JPanel keypad = new JPanel();
         keypad.setBackground(new Color(20, 20, 25));
         keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
@@ -752,6 +710,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 "1", "2", "3", "+", "+/-", "0", ".", "="};
 
         final Runnable[] liveUpdateHolder = new Runnable[1];
+        boolean[] isSwapping = new boolean[1];
 
         Runnable liveUpdate = () -> {
             try {
@@ -834,9 +793,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                             if (keyIndex != -1) {
                                 int valueStart = keyIndex + "\"time_last_update_utc\":\"".length();
                                 int valueEnd = jsonStr.indexOf("\"", valueStart);
-                                if (valueEnd != -1) {
-                                    lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
-                                }
+                                if (valueEnd != -1) lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
                             }
 
                             rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
@@ -859,19 +816,26 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         liveUpdateHolder[0] = liveUpdate;
 
         swapBtn.addActionListener(e -> {
-            String from = (String) fromBox.getSelectedItem();
-            String to = (String) toBox.getSelectedItem();
-            fromBox.setSelectedItem(to);
-            toBox.setSelectedItem(from);
+            isSwapping[0] = true;
+            try {
+                String from = (String) fromBox.getSelectedItem();
+                String to   = (String) toBox.getSelectedItem();
 
-            String temp = inputField.getText();
-            inputField.setText(resultLabel.getText());
-            resultLabel.setText(temp);
-            liveUpdate.run();
+                fromBox.setSelectedItem(to);
+                toBox.setSelectedItem(from);
+
+                String temp = inputField.getText();
+                inputField.setText(resultLabel.getText());
+                resultLabel.setText(temp);
+
+                liveUpdate.run();
+            } finally {
+                isSwapping[0] = false;
+            }
         });
 
-        fromBox.addActionListener(e -> liveUpdate.run());
-        toBox.addActionListener(e -> liveUpdate.run());
+        fromBox.addActionListener(e -> { if (!isSwapping[0]) liveUpdate.run(); });
+        toBox.addActionListener(e -> { if (!isSwapping[0]) liveUpdate.run(); });
 
         for (String text : keys) {
             JButton btn = createGlassButton(text);
@@ -943,96 +907,69 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         dialog.setVisible(true);
     }
 
-    // ====================== STYLED CURRENCY COMBOBOX ======================
-    // ====================== STYLED CURRENCY COMBOBOX ======================
-// ====================== FIXED STYLED CURRENCY COMBOBOX ======================
-private JComboBox<String> createStyledCurrencyComboBox(String[] items) {
-    JComboBox<String> combo = new JComboBox<>(items) {
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    private JComboBox<String> createStyledCurrencyComboBox(String[] items) {
+        JComboBox<String> combo = new JComboBox<>(items) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            // Background with glass effect
-            Color bg = new Color(30, 30, 35);   // Default
-            // Simple hover/pressed detection (safe for JComboBox)
-            if (isPopupVisible()) {
-                bg = new Color(45, 45, 52);
+                Color bg = isPopupVisible() ? new Color(45, 45, 52) : new Color(30, 30, 35);
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+                g2.setColor(new Color(255, 255, 255, 35));
+                g2.drawRoundRect(2, 2, getWidth() - 5, getHeight() - 5, 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
             }
+        };
 
-            g2.setColor(bg);
-            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 26));
+        combo.setForeground(Color.WHITE);
+        combo.setBackground(new Color(30, 30, 35));
+        combo.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+        combo.setFocusable(false);
+        combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        combo.setPreferredSize(new Dimension(160, 62));
 
-            // Subtle inner glow
-            g2.setColor(new Color(255, 255, 255, 35));
-            g2.drawRoundRect(2, 2, getWidth() - 5, getHeight() - 5, 16, 16);
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                label.setFont(new Font("Segoe UI", Font.PLAIN, 22));
+                label.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+                label.setHorizontalAlignment(SwingConstants.LEFT);
+                label.setText(value != null ? value.toString() : "");
 
-            g2.dispose();
-            super.paintComponent(g);
-        }
-    };
-
-    combo.setFont(new Font("Segoe UI", Font.PLAIN, 26));
-    combo.setForeground(Color.WHITE);
-    combo.setBackground(new Color(30, 30, 35));
-    combo.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
-    combo.setFocusable(false);
-    combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-    // Make the combo box wide enough so selected text doesn't truncate with "..."
-    combo.setPreferredSize(new Dimension(160, 62));   // Increased width
-
-    // Custom renderer to prevent truncation in dropdown list
-    combo.setRenderer(new DefaultListCellRenderer() {
-        @Override
-        public Component getListCellRendererComponent(JList<?> list, Object value,
-                int index, boolean isSelected, boolean cellHasFocus) {
-
-            JLabel label = (JLabel) super.getListCellRendererComponent(
-                    list, value, index, isSelected, cellHasFocus);
-
-            label.setFont(new Font("Segoe UI", Font.PLAIN, 22));
-            label.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
-            label.setHorizontalAlignment(SwingConstants.LEFT);
-
-            // Prevent ellipsis in dropdown items
-            label.setText(value != null ? value.toString() : "");
-
-            if (isSelected) {
-                label.setBackground(new Color(80, 200, 255));
-                label.setForeground(new Color(20, 20, 25));
-            } else {
-                label.setBackground(new Color(32, 32, 38));
-                label.setForeground(Color.WHITE);
+                if (isSelected) {
+                    label.setBackground(new Color(80, 200, 255));
+                    label.setForeground(new Color(20, 20, 25));
+                } else {
+                    label.setBackground(new Color(32, 32, 38));
+                    label.setForeground(Color.WHITE);
+                }
+                return label;
             }
+        });
 
-            return label;
-        }
-    });
-
-    // Ensure the popup menu is wide enough
-    combo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
-        @Override
-        public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
-            JComboBox<?> cb = (JComboBox<?>) e.getSource();
-            Object child = cb.getAccessibleContext().getAccessibleChild(0);
-            if (child instanceof JPopupMenu popup) {
-                popup.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 85), 1));
-                popup.setBackground(new Color(28, 28, 34));
-
-                // Force popup width to be at least as wide as the combo box + margin
-                popup.setPreferredSize(new Dimension(
-                    Math.max(cb.getWidth(), 180), 
-                    popup.getPreferredSize().height));
+        combo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
+                JComboBox<?> cb = (JComboBox<?>) e.getSource();
+                Object child = cb.getAccessibleContext().getAccessibleChild(0);
+                if (child instanceof JPopupMenu popup) {
+                    popup.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 85), 1));
+                    popup.setBackground(new Color(28, 28, 34));
+                    popup.setPreferredSize(new Dimension(Math.max(cb.getWidth(), 180), popup.getPreferredSize().height));
+                }
             }
-        }
+            @Override public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
+            @Override public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {}
+        });
 
-        @Override public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
-        @Override public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {}
-    });
-
-    return combo;
-}
+        return combo;
+    }
 
     private void openHistoryDialog() {
         JDialog dialog = new JDialog(this, "Calculation History", true);
