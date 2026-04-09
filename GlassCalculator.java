@@ -14,13 +14,16 @@ import java.util.List;
 /**
  * GlassCalculator - Final Project Version
  * Trigonometric keyboard shortcuts strictly disabled in Basic mode
- * 
+ *
  * FEATURES:
  * - Persistent history (saved across restarts)
  * - Ctrl+A / Cmd+A and double-click to select all
  * - Double Equals repeat (2×2=4=8=16=32...)
- * - NEW: Keyboard = / Enter support in Currency Converter
- *   (Just type amount and press = or Enter → instant live conversion)
+ * - OPTIMIZED + NON-LAGGING Currency Converter (FIXED)
+ *   • Global 5-minute cache
+ *   • Fully asynchronous rate fetching (no UI freeze)
+ *   • Self-referential lambda fixed
+ *   • Status indicator
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
     private JTextField display;
@@ -35,11 +38,24 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private JPanel buttonPanel;
     private enum Mode { BASIC, SCIENTIFIC }
     private Mode currentMode = Mode.BASIC;
-
     // Double Equals repeat feature
     private String lastOperator = "";
     private double lastOperand = 0.0;
     private boolean isRepeatPossible = false;
+
+    // ====================== OPTIMIZED GLOBAL CURRENCY CACHE ======================
+    private static class CachedRates {
+        final Map<String, Double> rates;
+        final long timestamp;
+        CachedRates(Map<String, Double> rates) {
+            this.rates = new HashMap<>(rates);
+            this.timestamp = System.currentTimeMillis();
+        }
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > 300_000; // 5 minutes
+        }
+    }
+    private static final Map<String, CachedRates> rateCache = new HashMap<>();
 
     public GlassCalculator() {
         setTitle("Glass Calculator");
@@ -47,7 +63,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         setLayout(new BorderLayout(10, 10));
         getContentPane().setBackground(new Color(20, 20, 25));
         setMacIcon();
-
         JPanel topPanel = new JPanel(new BorderLayout(0, 0));
         topPanel.setBackground(new Color(20, 20, 25));
         topPanel.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 4));
@@ -63,7 +78,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.getCaret().setBlinkRate(530);
         display.getCaret().setVisible(true);
         topPanel.add(display, BorderLayout.CENTER);
-
         JButton modeButton = new JButton("≡");
         modeButton.setFont(new Font("Segoe UI", Font.BOLD, 36));
         modeButton.setForeground(new Color(80, 200, 255));
@@ -75,17 +89,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         modeButton.setFocusable(false);
         modeButton.addActionListener(e -> showModePopup(modeButton));
         topPanel.add(modeButton, BorderLayout.EAST);
-
         add(topPanel, BorderLayout.NORTH);
-
         buttonPanel = new JPanel();
         buttonPanel.setBackground(new Color(20, 20, 25));
         buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         add(buttonPanel, BorderLayout.CENTER);
-
         updateButtonPanel();
-
-        // Double-click selects all
         display.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -94,16 +103,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 }
             }
         });
-
         display.addKeyListener(this);
         display.requestFocusInWindow();
-
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         setSize(prefs.getInt("width", 400), prefs.getInt("height", 620));
         setLocation(prefs.getInt("x", 200), prefs.getInt("y", 150));
-
         loadHistory();
-
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -133,11 +138,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 if (icnsIcon != null) java.awt.Taskbar.getTaskbar().setIconImage(icnsIcon);
             } catch (Exception ignored) {}
         } catch (Exception ignored) {}
-    }
-
-    private void updateDisplay(String text) {
-        display.setText(text);
-        SwingUtilities.invokeLater(() -> display.setCaretPosition(display.getText().length()));
     }
 
     private void updateButtonPanel() {
@@ -207,29 +207,23 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         popup.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 80), 1),
                 BorderFactory.createEmptyBorder(8, 4, 8, 4)));
-
         JMenuItem basicItem = new JMenuItem(currentMode == Mode.BASIC ? " ✓ Basic" : " Basic");
         stylePopupItem(basicItem);
         basicItem.addActionListener(e -> { currentMode = Mode.BASIC; updateButtonPanel(); });
         popup.add(basicItem);
-
         JMenuItem scientificItem = new JMenuItem(currentMode == Mode.SCIENTIFIC ? " ✓ Scientific" : " Scientific");
         stylePopupItem(scientificItem);
         scientificItem.addActionListener(e -> { currentMode = Mode.SCIENTIFIC; updateButtonPanel(); });
         popup.add(scientificItem);
-
         popup.addSeparator();
-
         JMenuItem convertItem = new JMenuItem(" Convert");
         stylePopupItem(convertItem);
         convertItem.addActionListener(e -> openCurrencyConverter());
         popup.add(convertItem);
-
         JMenuItem historyItem = new JMenuItem(" History");
         stylePopupItem(historyItem);
         historyItem.addActionListener(e -> openHistoryDialog());
         popup.add(historyItem);
-
         popup.show(invoker, invoker.getWidth() - 240, invoker.getHeight() + 4);
     }
 
@@ -306,13 +300,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             e.consume();
             return;
         }
-
         char ch = e.getKeyChar();
         int key = e.getKeyCode();
         if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) { handleEquals(); highlightButton("="); e.consume(); return; }
         if (key == KeyEvent.VK_BACK_SPACE) { deleteLeftOfCursor(); highlightButton("C"); e.consume(); return; }
         if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) { resetCalculator(); highlightButton("AC"); e.consume(); return; }
-
         switch (ch) {
             case '0' -> { insertAtCursor("0"); highlightButton("0"); e.consume(); }
             case '1' -> { insertAtCursor("1"); highlightButton("1"); e.consume(); }
@@ -333,7 +325,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             case '(' -> { insertAtCursor("("); highlightButton("("); e.consume(); }
             case ')' -> { insertAtCursor(")"); highlightButton(")"); e.consume(); }
         }
-
         if (currentMode == Mode.SCIENTIFIC) {
             switch (ch) {
                 case 's','S' -> { insertAtCursor(inverseMode ? "asin(" : "sin("); highlightButton("sin"); e.consume(); }
@@ -347,7 +338,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 case '!' -> { handleFactorial(); highlightButton("!"); e.consume(); }
             }
         }
-
         if (ch == '%') {
             handlePercentage();
             highlightButton("%");
@@ -407,7 +397,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private void handleEquals() {
         String currentText = display.getText().trim();
         if (currentText.isEmpty()) return;
-
         try {
             if (isRepeatPossible && startNewInput && !lastOperator.isEmpty()) {
                 double currentValue = Double.parseDouble(currentText);
@@ -418,17 +407,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 double result = evaluateExpression(currentText);
                 String formatted = formatResult(result);
                 display.setText(formatted);
-
                 history.add(0, currentText + " = " + formatted);
                 if (history.size() > 100) history.remove(history.size() - 1);
                 saveHistory();
-
                 extractLastOperation(currentText);
             }
-
             isRepeatPossible = true;
             startNewInput = true;
-
         } catch (Exception ex) {
             display.setText("Error");
             isRepeatPossible = false;
@@ -441,10 +426,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 .replace("÷", "/")
                 .replace("−", "-")
                 .replace("xʸ", "^");
-
         lastOperator = "";
         lastOperand = 0.0;
-
         int lastOpIndex = -1;
         char lastOpChar = 0;
         for (int i = cleaned.length() - 1; i >= 0; i--) {
@@ -457,7 +440,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
         }
         if (lastOpIndex == -1) return;
-
         String rightPart = cleaned.substring(lastOpIndex + 1);
         int numEnd = 0;
         while (numEnd < rightPart.length()) {
@@ -469,7 +451,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 break;
             }
         }
-
         if (numEnd > 0) {
             String numberStr = rightPart.substring(0, numEnd);
             try {
@@ -502,15 +483,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private static class ExpressionParser {
         private final String input;
         private int pos = 0;
-
         ExpressionParser(String input) { this.input = input; }
-
         double parse() throws Exception {
             double value = parseExpression();
             if (pos < input.length()) throw new Exception("Invalid expression");
             return value;
         }
-
         private double parseExpression() throws Exception {
             double value = parseTerm();
             while (pos < input.length()) {
@@ -523,7 +501,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
-
         private double parseTerm() throws Exception {
             double value = parseFactor();
             while (pos < input.length()) {
@@ -541,7 +518,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
-
         private boolean isStartOfFactor() {
             if (pos >= input.length()) return false;
             char c = input.charAt(pos);
@@ -557,7 +533,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
                     remaining.startsWith("log(") || remaining.startsWith("ln(");
         }
-
         private double parseFactor() throws Exception {
             double value = parsePrimary();
             while (pos < input.length()) {
@@ -570,7 +545,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
-
         private double parsePrimary() throws Exception {
             if (pos >= input.length()) throw new Exception("Unexpected end");
             char c = input.charAt(pos);
@@ -597,13 +571,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             throw new Exception("Unknown token at " + pos);
         }
-
         private double parseNumber() {
             int start = pos;
             while (pos < input.length() && (Character.isDigit(input.charAt(pos)) || input.charAt(pos) == '.')) pos++;
             return Double.parseDouble(input.substring(start, pos));
         }
-
         private void expect(char ch) throws Exception {
             if (pos < input.length() && input.charAt(pos) == ch) pos++;
             else throw new Exception("Expected " + ch);
@@ -655,141 +627,266 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
     }
 
+    // ====================== FIXED NON-LAGGING CURRENCY CONVERTER ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
-        dialog.setSize(460, 460);
+        dialog.setSize(420, 720);
         dialog.setLocationRelativeTo(this);
-        dialog.setLayout(new GridBagLayout());
+        dialog.setLayout(new BorderLayout(0, 0));
         dialog.getContentPane().setBackground(new Color(20, 20, 25));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(12, 15, 12, 15);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        JLabel title = new JLabel("Live Currency Converter");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 26));
-        title.setForeground(new Color(80, 200, 255));
-        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
-        dialog.add(title, gbc);
+        // === Top display area ===
+        JPanel displayArea = new JPanel();
+        displayArea.setLayout(new BoxLayout(displayArea, BoxLayout.Y_AXIS));
+        displayArea.setBackground(new Color(20, 20, 25));
+        displayArea.setBorder(BorderFactory.createEmptyBorder(30, 20, 20, 20));
 
-        gbc.gridwidth = 1; gbc.gridy = 1;
-        dialog.add(new JLabel("Amount:"), gbc);
-        JTextField amountField = new JTextField("1");
-        amountField.setFont(new Font("Segoe UI", Font.PLAIN, 24));
-        gbc.gridx = 1;
-        dialog.add(amountField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 2;
-        dialog.add(new JLabel("From:"), gbc);
-        JComboBox<String> fromBox = new JComboBox<>(currencies);
-        fromBox.setSelectedItem("USD");
-        fromBox.setFont(new Font("Segoe UI", Font.PLAIN, 20));
-        gbc.gridx = 1;
-        dialog.add(fromBox, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 3;
-        dialog.add(new JLabel("To:"), gbc);
+        JPanel resultLine = new JPanel(new BorderLayout(0, 0));
+        resultLine.setBackground(new Color(20, 20, 25));
+        JLabel resultLabel = new JLabel("0", SwingConstants.RIGHT);
+        resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 52));
+        resultLabel.setForeground(Color.WHITE);
         JComboBox<String> toBox = new JComboBox<>(currencies);
         toBox.setSelectedItem("INR");
-        toBox.setFont(new Font("Segoe UI", Font.PLAIN, 20));
-        gbc.gridx = 1;
-        dialog.add(toBox, gbc);
+        toBox.setFont(new Font("Segoe UI", Font.PLAIN, 28));
+        toBox.setBackground(new Color(30, 30, 35));
+        toBox.setForeground(Color.WHITE);
+        resultLine.add(resultLabel, BorderLayout.CENTER);
+        resultLine.add(toBox, BorderLayout.EAST);
 
-        JLabel resultLabel = new JLabel("Click Convert to get live rate");
-        resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 24));
-        resultLabel.setForeground(Color.WHITE);
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
-        dialog.add(resultLabel, gbc);
+        // iOS-style swap button
+        JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        swapPanel.setBackground(new Color(20, 20, 25));
+        JButton swapBtn = createGlassButton("↕");
+        swapBtn.setFont(new Font("Segoe UI", Font.BOLD, 34));
+        swapBtn.setForeground(new Color(255, 165, 0));
+        swapBtn.setBorder(BorderFactory.createEmptyBorder(16, 32, 16, 32));
+        swapPanel.add(swapBtn);
 
-        JLabel rateLabel = new JLabel(" ");
-        rateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 18));
-        rateLabel.setForeground(new Color(150, 150, 150));
-        gbc.gridy = 5;
-        dialog.add(rateLabel, gbc);
+        JPanel inputLine = new JPanel(new BorderLayout(0, 0));
+        inputLine.setBackground(new Color(20, 20, 25));
+        JTextField inputField = new JTextField("0");
+        inputField.setHorizontalAlignment(JTextField.RIGHT);
+        inputField.setFont(new Font("Segoe UI", Font.PLAIN, 52));
+        inputField.setBackground(new Color(30, 30, 35));
+        inputField.setForeground(Color.WHITE);
+        inputField.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
+        inputField.setEditable(false);
+        JComboBox<String> fromBox = new JComboBox<>(currencies);
+        fromBox.setSelectedItem("USD");
+        fromBox.setFont(new Font("Segoe UI", Font.PLAIN, 28));
+        fromBox.setBackground(new Color(30, 30, 35));
+        fromBox.setForeground(Color.WHITE);
+        inputLine.add(inputField, BorderLayout.CENTER);
+        inputLine.add(fromBox, BorderLayout.EAST);
 
-        JButton convertBtn = new JButton("Convert (Live)");
-        convertBtn.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        convertBtn.setBackground(new Color(80, 200, 255));
-        convertBtn.setForeground(Color.BLACK);
-        gbc.gridy = 6; gbc.gridwidth = 1; gbc.gridx = 0;
-        dialog.add(convertBtn, gbc);
+        // Status label
+        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        statusPanel.setBackground(new Color(20, 20, 25));
+        JLabel statusLabel = new JLabel("Live rates • Ready");
+        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        statusLabel.setForeground(new Color(120, 220, 120));
+        statusPanel.add(statusLabel);
 
-        JButton closeBtn = new JButton("Close");
-        closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 20));
-        gbc.gridx = 1;
-        dialog.add(closeBtn, gbc);
+        displayArea.add(resultLine);
+        displayArea.add(swapPanel);
+        displayArea.add(inputLine);
+        displayArea.add(statusPanel);
+        dialog.add(displayArea, BorderLayout.NORTH);
 
-        // ====================== KEYBOARD EQUALS IN CURRENCY CONVERTER ======================
-        // Press = or Enter in the amount field → instantly triggers conversion
-        amountField.addKeyListener(new KeyAdapter() {
+        // === Keypad ===
+        JPanel keypad = new JPanel();
+        keypad.setBackground(new Color(20, 20, 25));
+        keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
+        keypad.setLayout(new GridLayout(5, 4, 12, 12));
+        String[] keys = {"⌫", "AC", "%", "÷",
+                         "7", "8", "9", "×",
+                         "4", "5", "6", "−",
+                         "1", "2", "3", "+",
+                         "+/-", "0", ".", "="};
+
+        // FIXED: Self-referential lambda using holder pattern (no more compile error)
+        final Runnable[] liveUpdateHolder = new Runnable[1];
+        Runnable liveUpdate = () -> {
+            try {
+                String inputStr = inputField.getText().trim().replace(" ", "");
+                if (inputStr.isEmpty() || inputStr.equals("0")) {
+                    resultLabel.setText("0");
+                    statusLabel.setText("Live rates • Ready");
+                    return;
+                }
+
+                double amount;
+                try {
+                    String cleaned = inputStr.replace("÷", "/").replace("×", "*").replace("−", "-");
+                    amount = new ExpressionParser(cleaned).parse();
+                } catch (Exception ex) {
+                    try {
+                        amount = Double.parseDouble(inputStr);
+                    } catch (Exception ex2) {
+                        resultLabel.setText("Error");
+                        return;
+                    }
+                }
+
+                String from = (String) fromBox.getSelectedItem();
+                String to = (String) toBox.getSelectedItem();
+
+                if (from.equals(to)) {
+                    resultLabel.setText(formatResult(amount));
+                    statusLabel.setText("Live rates • Ready");
+                    return;
+                }
+
+                // Fast cache check
+                CachedRates cached = rateCache.get(from);
+                if (cached != null && !cached.isExpired()) {
+                    double rate = cached.rates.getOrDefault(to, 0.0);
+                    double converted = amount * rate;
+                    resultLabel.setText(formatResult(converted));
+                    statusLabel.setText("Live rates • Updated moments ago");
+                    return;
+                }
+
+                // Cache miss → async fetch
+                resultLabel.setText("Fetching live rates...");
+                statusLabel.setText("Connecting to API...");
+
+                new SwingWorker<Void, Void>() {
+                    @Override
+                    protected Void doInBackground() {
+                        try {
+                            String urlStr = "https://v6.exchangerate-api.com/v6/" + API_KEY + "/latest/" + from;
+                            URL url = new URL(urlStr);
+                            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                            conn.setRequestMethod("GET");
+                            conn.setConnectTimeout(8000);
+                            conn.setReadTimeout(8000);
+
+                            StringBuilder content = new StringBuilder();
+                            try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                                String inputLine;
+                                while ((inputLine = in.readLine()) != null) content.append(inputLine);
+                            }
+                            conn.disconnect();
+
+                            String jsonStr = content.toString();
+                            Map<String, Double> rates = new HashMap<>();
+                            int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
+                            if (ratesStart == -1) return null;
+
+                            int openBrace = jsonStr.indexOf('{', ratesStart);
+                            int closeBrace = jsonStr.indexOf('}', openBrace);
+                            String ratesSection = jsonStr.substring(openBrace + 1, closeBrace);
+                            String[] pairs = ratesSection.split(",");
+
+                            for (String pair : pairs) {
+                                pair = pair.trim();
+                                if (pair.isEmpty()) continue;
+                                String[] keyValue = pair.split(":", 2);
+                                if (keyValue.length == 2) {
+                                    String currency = keyValue[0].replace("\"", "").trim();
+                                    try {
+                                        double rate = Double.parseDouble(keyValue[1].trim());
+                                        rates.put(currency, rate);
+                                    } catch (NumberFormatException ignored) {}
+                                }
+                            }
+                            rateCache.put(from, new CachedRates(rates));
+                        } catch (Exception ignored) {}
+                        return null;
+                    }
+
+                    @Override
+                    protected void done() {
+                        SwingUtilities.invokeLater(liveUpdateHolder[0]);
+                    }
+                }.execute();
+
+            } catch (Exception ignored) {
+                resultLabel.setText("Error");
+            }
+        };
+        liveUpdateHolder[0] = liveUpdate;   // ← This fixes the self-reference error
+
+        swapBtn.addActionListener(e -> {
+            String from = (String) fromBox.getSelectedItem();
+            String to = (String) toBox.getSelectedItem();
+            fromBox.setSelectedItem(to);
+            toBox.setSelectedItem(from);
+            String temp = inputField.getText();
+            inputField.setText(resultLabel.getText());
+            resultLabel.setText(temp);
+            liveUpdate.run();
+        });
+
+        fromBox.addActionListener(e -> liveUpdate.run());
+        toBox.addActionListener(e -> liveUpdate.run());
+
+        for (String text : keys) {
+            JButton btn = createGlassButton(text);
+            String cmd = text;
+            btn.addActionListener(e -> {
+                if (cmd.equals("⌫")) {
+                    String txt = inputField.getText();
+                    if (txt.length() > 0) {
+                        txt = txt.substring(0, txt.length() - 1);
+                        inputField.setText(txt.isEmpty() ? "0" : txt);
+                    }
+                } else if (cmd.equals("AC")) {
+                    inputField.setText("0");
+                } else if (cmd.equals("%")) {
+                    try {
+                        String txt = inputField.getText().trim().replace(" ", "");
+                        String cleaned = txt.replace("÷","/").replace("×","*").replace("−","-");
+                        double v = new ExpressionParser(cleaned).parse();
+                        inputField.setText(formatResult(v / 100));
+                    } catch (Exception ignored) {}
+                } else if (cmd.equals("+/-")) {
+                    try {
+                        String txt = inputField.getText().trim().replace(" ", "");
+                        String cleaned = txt.replace("÷","/").replace("×","*").replace("−","-");
+                        double v = new ExpressionParser(cleaned).parse();
+                        inputField.setText(formatResult(-v));
+                    } catch (Exception ignored) {}
+                } else if (cmd.matches("[0-9]")) {
+                    String txt = inputField.getText();
+                    if (txt.equals("0")) txt = "";
+                    inputField.setText(txt + cmd);
+                } else if (cmd.equals(".")) {
+                    String txt = inputField.getText();
+                    if (!txt.contains(".")) {
+                        inputField.setText(txt.equals("0") ? "0." : txt + ".");
+                    }
+                } else if ("÷×−+".contains(cmd)) {
+                    String txt = inputField.getText();
+                    String op = cmd.equals("÷") ? "/" : cmd.equals("×") ? "*" : cmd.equals("−") ? "-" : "+";
+                    inputField.setText(txt + op);
+                } else if (cmd.equals("=")) {
+                    try {
+                        String expr = inputField.getText().replace("÷", "/").replace("×", "*").replace("−", "-");
+                        double res = new ExpressionParser(expr).parse();
+                        inputField.setText(formatResult(res));
+                    } catch (Exception ignored) {}
+                }
+                liveUpdate.run();
+            });
+            if ("÷×−+=".contains(cmd)) btn.setForeground(new Color(255, 165, 0));
+            if (cmd.equals("⌫")) btn.setForeground(new Color(180, 180, 190));
+            keypad.add(btn);
+        }
+        dialog.add(keypad, BorderLayout.CENTER);
+
+        dialog.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_EQUALS) {
-                    convertBtn.doClick();
+                    liveUpdate.run();
                     e.consume();
                 }
             }
         });
-        // =================================================================================
-
-        convertBtn.addActionListener(ev -> {
-            try {
-                double amount = Double.parseDouble(amountField.getText().trim());
-                String from = (String) fromBox.getSelectedItem();
-                String to = (String) toBox.getSelectedItem();
-                if (from.equals(to)) {
-                    resultLabel.setText(String.format("%.4f %s = %.4f %s", amount, from, amount, to));
-                    rateLabel.setText("1 " + from + " = 1 " + to);
-                    return;
-                }
-                Map<String, Double> rates = fetchLiveRates(from);
-                double rate = rates.getOrDefault(to, 0.0);
-                double converted = amount * rate;
-                resultLabel.setText(String.format("%.4f %s = %.4f %s", amount, from, converted, to));
-                rateLabel.setText(String.format("1 %s = %.4f %s", from, rate, to));
-            } catch (Exception ex) {
-                resultLabel.setText("Failed to fetch live rates");
-            }
-        });
-
-        closeBtn.addActionListener(ev -> dialog.dispose());
         dialog.setVisible(true);
-    }
-
-    private Map<String, Double> fetchLiveRates(String base) throws Exception {
-        String urlStr = "https://v6.exchangerate-api.com/v6/" + API_KEY + "/latest/" + base;
-        URL url = new URL(urlStr);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("GET");
-        conn.setConnectTimeout(10000);
-        conn.setReadTimeout(10000);
-        StringBuilder content = new StringBuilder();
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-            String inputLine;
-            while ((inputLine = in.readLine()) != null) content.append(inputLine);
-        }
-        conn.disconnect();
-
-        String jsonStr = content.toString();
-        Map<String, Double> rates = new HashMap<>();
-        int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
-        if (ratesStart == -1) throw new Exception("Invalid API response");
-        int openBrace = jsonStr.indexOf('{', ratesStart);
-        int closeBrace = jsonStr.indexOf('}', openBrace);
-        String ratesSection = jsonStr.substring(openBrace + 1, closeBrace);
-        String[] pairs = ratesSection.split(",");
-        for (String pair : pairs) {
-            pair = pair.trim();
-            if (pair.isEmpty()) continue;
-            String[] keyValue = pair.split(":", 2);
-            if (keyValue.length == 2) {
-                String currency = keyValue[0].replace("\"", "").trim();
-                try {
-                    double rate = Double.parseDouble(keyValue[1].trim());
-                    rates.put(currency, rate);
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-        return rates;
     }
 
     private void openHistoryDialog() {
@@ -798,20 +895,17 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout(10, 10));
         dialog.getContentPane().setBackground(new Color(20, 20, 25));
-
         JLabel title = new JLabel("Calculation History");
         title.setFont(new Font("Segoe UI", Font.BOLD, 26));
         title.setForeground(new Color(80, 200, 255));
         title.setHorizontalAlignment(SwingConstants.CENTER);
         dialog.add(title, BorderLayout.NORTH);
-
         JTextArea historyArea = new JTextArea();
         historyArea.setEditable(false);
         historyArea.setFont(new Font("Segoe UI", Font.PLAIN, 20));
         historyArea.setBackground(new Color(30, 30, 35));
         historyArea.setForeground(Color.WHITE);
         historyArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
         if (history.isEmpty()) {
             historyArea.setText("No calculations performed yet.\n\nPress = on any calculation to add it here.");
         } else {
@@ -819,39 +913,31 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             for (String entry : history) sb.append(entry).append("\n\n");
             historyArea.setText(sb.toString().trim());
         }
-
         JScrollPane scrollPane = new JScrollPane(historyArea);
         dialog.add(scrollPane, BorderLayout.CENTER);
-
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
         btnPanel.setBackground(new Color(20, 20, 25));
-
         JButton clearBtn = new JButton("Clear History");
         clearBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         clearBtn.setBackground(new Color(220, 50, 50));
         clearBtn.setForeground(Color.WHITE);
         clearBtn.setFocusPainted(false);
         clearBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
-
         JButton closeBtn = new JButton("Close");
         closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 18));
         closeBtn.setBackground(new Color(80, 200, 255));
         closeBtn.setForeground(Color.BLACK);
         closeBtn.setFocusPainted(false);
         closeBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
-
         btnPanel.add(clearBtn);
         btnPanel.add(closeBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
-
         clearBtn.addActionListener(ev -> {
             history.clear();
             saveHistory();
             historyArea.setText("History has been cleared.");
         });
-
         closeBtn.addActionListener(ev -> dialog.dispose());
-
         dialog.setVisible(true);
     }
 
