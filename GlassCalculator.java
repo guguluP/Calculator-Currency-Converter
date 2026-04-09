@@ -13,19 +13,10 @@ import java.util.List;
 
 /**
  * GlassCalculator - Final Project Version
- * Trigonometric keyboard shortcuts strictly disabled in Basic mode
- *
- * FEATURES:
- * - Persistent history (saved across restarts)
- * - Ctrl+A / Cmd+A and double-click to select all
- * - Double Equals repeat (2×2=4=8=16=32...)
- * - OPTIMIZED + NON-LAGGING Currency Converter
- *   • Global 5-minute cache
- *   • Fully asynchronous rate fetching (no UI freeze)
- *   • REAL "Last updated" timestamp from the API (time_last_update_utc)
- *   • Fixed parsing bug that caused "Last updated: ,"
+ * With Improved Stylish Currency Converter Dropdowns
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
+
     private JTextField display;
     private boolean startNewInput = true;
     private boolean inverseMode = false;
@@ -34,6 +25,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             "USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "RUB",
             "BRL", "ZAR", "MXN", "SGD", "HKD", "SEK", "NOK", "DKK", "KRW", "TRY"
     };
+
     private List<String> history = new ArrayList<>();
     private JPanel buttonPanel;
     private enum Mode { BASIC, SCIENTIFIC }
@@ -58,6 +50,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             return System.currentTimeMillis() - timestamp > 300_000; // 5 minutes
         }
     }
+
     private static final Map<String, CachedRates> rateCache = new HashMap<>();
 
     public GlassCalculator() {
@@ -66,9 +59,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         setLayout(new BorderLayout(10, 10));
         getContentPane().setBackground(new Color(20, 20, 25));
         setMacIcon();
+
         JPanel topPanel = new JPanel(new BorderLayout(0, 0));
         topPanel.setBackground(new Color(20, 20, 25));
         topPanel.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 4));
+
         display = new JTextField("0");
         display.setEditable(false);
         display.setHorizontalAlignment(JTextField.RIGHT);
@@ -81,6 +76,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.getCaret().setBlinkRate(530);
         display.getCaret().setVisible(true);
         topPanel.add(display, BorderLayout.CENTER);
+
         JButton modeButton = new JButton("≡");
         modeButton.setFont(new Font("Segoe UI", Font.BOLD, 36));
         modeButton.setForeground(new Color(80, 200, 255));
@@ -92,12 +88,16 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         modeButton.setFocusable(false);
         modeButton.addActionListener(e -> showModePopup(modeButton));
         topPanel.add(modeButton, BorderLayout.EAST);
+
         add(topPanel, BorderLayout.NORTH);
+
         buttonPanel = new JPanel();
         buttonPanel.setBackground(new Color(20, 20, 25));
         buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         add(buttonPanel, BorderLayout.CENTER);
+
         updateButtonPanel();
+
         display.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -106,12 +106,16 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 }
             }
         });
+
         display.addKeyListener(this);
         display.requestFocusInWindow();
+
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         setSize(prefs.getInt("width", 400), prefs.getInt("height", 620));
         setLocation(prefs.getInt("x", 200), prefs.getInt("y", 150));
+
         loadHistory();
+
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -210,23 +214,29 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         popup.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 80), 1),
                 BorderFactory.createEmptyBorder(8, 4, 8, 4)));
+
         JMenuItem basicItem = new JMenuItem(currentMode == Mode.BASIC ? " ✓ Basic" : " Basic");
         stylePopupItem(basicItem);
         basicItem.addActionListener(e -> { currentMode = Mode.BASIC; updateButtonPanel(); });
         popup.add(basicItem);
+
         JMenuItem scientificItem = new JMenuItem(currentMode == Mode.SCIENTIFIC ? " ✓ Scientific" : " Scientific");
         stylePopupItem(scientificItem);
         scientificItem.addActionListener(e -> { currentMode = Mode.SCIENTIFIC; updateButtonPanel(); });
         popup.add(scientificItem);
+
         popup.addSeparator();
+
         JMenuItem convertItem = new JMenuItem(" Convert");
         stylePopupItem(convertItem);
         convertItem.addActionListener(e -> openCurrencyConverter());
         popup.add(convertItem);
+
         JMenuItem historyItem = new JMenuItem(" History");
         stylePopupItem(historyItem);
         historyItem.addActionListener(e -> openHistoryDialog());
         popup.add(historyItem);
+
         popup.show(invoker, invoker.getWidth() - 240, invoker.getHeight() + 4);
     }
 
@@ -242,6 +252,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         JButton source = (JButton) e.getSource();
         String cmd = source.getText();
         highlightButton(cmd);
+
         switch (cmd) {
             case "AC" -> resetCalculator();
             case "C" -> deleteLeftOfCursor();
@@ -302,11 +313,29 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             e.consume();
             return;
         }
+
         char ch = e.getKeyChar();
         int key = e.getKeyCode();
-        if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) { handleEquals(); highlightButton("="); e.consume(); return; }
-        if (key == KeyEvent.VK_BACK_SPACE) { deleteLeftOfCursor(); highlightButton("C"); e.consume(); return; }
-        if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) { resetCalculator(); highlightButton("AC"); e.consume(); return; }
+
+        if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) {
+            handleEquals();
+            highlightButton("=");
+            e.consume();
+            return;
+        }
+        if (key == KeyEvent.VK_BACK_SPACE) {
+            deleteLeftOfCursor();
+            highlightButton("C");
+            e.consume();
+            return;
+        }
+        if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) {
+            resetCalculator();
+            highlightButton("AC");
+            e.consume();
+            return;
+        }
+
         switch (ch) {
             case '0' -> { insertAtCursor("0"); highlightButton("0"); e.consume(); }
             case '1' -> { insertAtCursor("1"); highlightButton("1"); e.consume(); }
@@ -327,6 +356,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             case '(' -> { insertAtCursor("("); highlightButton("("); e.consume(); }
             case ')' -> { insertAtCursor(")"); highlightButton(")"); e.consume(); }
         }
+
         if (currentMode == Mode.SCIENTIFIC) {
             switch (ch) {
                 case 's','S' -> { insertAtCursor(inverseMode ? "asin(" : "sin("); highlightButton("sin"); e.consume(); }
@@ -340,6 +370,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 case '!' -> { handleFactorial(); highlightButton("!"); e.consume(); }
             }
         }
+
         if (ch == '%') {
             handlePercentage();
             highlightButton("%");
@@ -379,12 +410,17 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             String current = display.getText().trim();
             if (current.isEmpty()) return;
             double num = Double.parseDouble(current);
-            if (num < 0 || num != (long) num) { display.setText("Error"); return; }
+            if (num < 0 || num != (long) num) {
+                display.setText("Error");
+                return;
+            }
             long fact = 1;
             for (long i = 2; i <= (long) num; i++) fact *= i;
             display.setText(String.valueOf(fact));
             startNewInput = true;
-        } catch (Exception ex) { display.setText("Error"); }
+        } catch (Exception ex) {
+            display.setText("Error");
+        }
     }
 
     private void handleSignChange() {
@@ -435,7 +471,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         for (int i = cleaned.length() - 1; i >= 0; i--) {
             char c = cleaned.charAt(i);
             if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') &&
-                i > 0 && i < cleaned.length() - 1) {
+                    i > 0 && i < cleaned.length() - 1) {
                 lastOpIndex = i;
                 lastOpChar = c;
                 break;
@@ -483,12 +519,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private static class ExpressionParser {
         private final String input;
         private int pos = 0;
+
         ExpressionParser(String input) { this.input = input; }
+
         double parse() throws Exception {
             double value = parseExpression();
             if (pos < input.length()) throw new Exception("Invalid expression");
             return value;
         }
+
         private double parseExpression() throws Exception {
             double value = parseTerm();
             while (pos < input.length()) {
@@ -501,6 +540,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
+
         private double parseTerm() throws Exception {
             double value = parseFactor();
             while (pos < input.length()) {
@@ -518,6 +558,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
+
         private boolean isStartOfFactor() {
             if (pos >= input.length()) return false;
             char c = input.charAt(pos);
@@ -529,6 +570,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
                     remaining.startsWith("log(") || remaining.startsWith("ln(");
         }
+
         private double parseFactor() throws Exception {
             double value = parsePrimary();
             while (pos < input.length()) {
@@ -541,6 +583,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             return value;
         }
+
         private double parsePrimary() throws Exception {
             if (pos >= input.length()) throw new Exception("Unexpected end");
             char c = input.charAt(pos);
@@ -567,11 +610,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
             throw new Exception("Unknown token at " + pos);
         }
+
         private double parseNumber() {
             int start = pos;
             while (pos < input.length() && (Character.isDigit(input.charAt(pos)) || input.charAt(pos) == '.')) pos++;
             return Double.parseDouble(input.substring(start, pos));
         }
+
         private void expect(char ch) throws Exception {
             if (pos < input.length() && input.charAt(pos) == ch) pos++;
             else throw new Exception("Expected " + ch);
@@ -623,10 +668,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
     }
 
-    // ====================== FIXED CURRENCY CONVERTER - REAL LAST UPDATED TIMESTAMP ======================
+    // ====================== IMPROVED CURRENCY CONVERTER WITH STYLISH DROPDOWNS ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
-        dialog.setSize(420, 720);
+        dialog.setSize(440, 740);
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout(0, 0));
         dialog.getContentPane().setBackground(new Color(20, 20, 25));
@@ -636,44 +681,53 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         displayArea.setBackground(new Color(20, 20, 25));
         displayArea.setBorder(BorderFactory.createEmptyBorder(30, 20, 20, 20));
 
+        // Result Line
         JPanel resultLine = new JPanel(new BorderLayout(0, 0));
         resultLine.setBackground(new Color(20, 20, 25));
+        resultLine.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+
         JLabel resultLabel = new JLabel("0", SwingConstants.RIGHT);
-        resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 52));
+        resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 54));
         resultLabel.setForeground(Color.WHITE);
-        JComboBox<String> toBox = new JComboBox<>(currencies);
+
+        JComboBox<String> toBox = createStyledCurrencyComboBox(currencies);
         toBox.setSelectedItem("INR");
-        toBox.setFont(new Font("Segoe UI", Font.PLAIN, 28));
-        toBox.setBackground(new Color(30, 30, 35));
-        toBox.setForeground(Color.WHITE);
+        toBox.setPreferredSize(new Dimension(145, 62));
+
         resultLine.add(resultLabel, BorderLayout.CENTER);
         resultLine.add(toBox, BorderLayout.EAST);
 
-        JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        // Swap Button
+        JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 8));
         swapPanel.setBackground(new Color(20, 20, 25));
         JButton swapBtn = createGlassButton("↕");
-        swapBtn.setFont(new Font("Segoe UI", Font.BOLD, 34));
+        swapBtn.setFont(new Font("Segoe UI", Font.BOLD, 36));
         swapBtn.setForeground(new Color(255, 165, 0));
-        swapBtn.setBorder(BorderFactory.createEmptyBorder(16, 32, 16, 32));
+        swapBtn.setPreferredSize(new Dimension(68, 68));
         swapPanel.add(swapBtn);
 
+        // Input Line
         JPanel inputLine = new JPanel(new BorderLayout(0, 0));
         inputLine.setBackground(new Color(20, 20, 25));
+        inputLine.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
         JTextField inputField = new JTextField("0");
         inputField.setHorizontalAlignment(JTextField.RIGHT);
-        inputField.setFont(new Font("Segoe UI", Font.PLAIN, 52));
+        inputField.setFont(new Font("Segoe UI", Font.PLAIN, 54));
         inputField.setBackground(new Color(30, 30, 35));
         inputField.setForeground(Color.WHITE);
         inputField.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
         inputField.setEditable(false);
-        JComboBox<String> fromBox = new JComboBox<>(currencies);
+        inputField.setCaretColor(new Color(80, 200, 255));
+
+        JComboBox<String> fromBox = createStyledCurrencyComboBox(currencies);
         fromBox.setSelectedItem("USD");
-        fromBox.setFont(new Font("Segoe UI", Font.PLAIN, 28));
-        fromBox.setBackground(new Color(30, 30, 35));
-        fromBox.setForeground(Color.WHITE);
+        fromBox.setPreferredSize(new Dimension(145, 62));
+
         inputLine.add(inputField, BorderLayout.CENTER);
         inputLine.add(fromBox, BorderLayout.EAST);
 
+        // Status Panel
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         statusPanel.setBackground(new Color(20, 20, 25));
         JLabel statusLabel = new JLabel("Live rates • Ready");
@@ -685,15 +739,20 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         displayArea.add(swapPanel);
         displayArea.add(inputLine);
         displayArea.add(statusPanel);
+
         dialog.add(displayArea, BorderLayout.NORTH);
 
+        // Keypad
         JPanel keypad = new JPanel();
         keypad.setBackground(new Color(20, 20, 25));
         keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
         keypad.setLayout(new GridLayout(5, 4, 12, 12));
-        String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−", "1", "2", "3", "+", "+/-", "0", ".", "="};
+
+        String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−",
+                "1", "2", "3", "+", "+/-", "0", ".", "="};
 
         final Runnable[] liveUpdateHolder = new Runnable[1];
+
         Runnable liveUpdate = () -> {
             try {
                 String inputStr = inputField.getText().trim().replace(" ", "");
@@ -770,7 +829,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                                 }
                             }
 
-                            // FIXED: Robust parsing of real API timestamp
                             String lastUpdatedUtc = "Unknown";
                             int keyIndex = jsonStr.indexOf("\"time_last_update_utc\":\"");
                             if (keyIndex != -1) {
@@ -782,6 +840,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                             }
 
                             rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
+
                         } catch (Exception ignored) {}
                         return null;
                     }
@@ -796,6 +855,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 resultLabel.setText("Error");
             }
         };
+
         liveUpdateHolder[0] = liveUpdate;
 
         swapBtn.addActionListener(e -> {
@@ -803,6 +863,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             String to = (String) toBox.getSelectedItem();
             fromBox.setSelectedItem(to);
             toBox.setSelectedItem(from);
+
             String temp = inputField.getText();
             inputField.setText(resultLabel.getText());
             resultLabel.setText(temp);
@@ -815,6 +876,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         for (String text : keys) {
             JButton btn = createGlassButton(text);
             String cmd = text;
+
             btn.addActionListener(e -> {
                 if (cmd.equals("⌫")) {
                     String txt = inputField.getText();
@@ -859,10 +921,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 }
                 liveUpdate.run();
             });
+
             if ("÷×−+=".contains(cmd)) btn.setForeground(new Color(255, 165, 0));
             if (cmd.equals("⌫")) btn.setForeground(new Color(180, 180, 190));
+
             keypad.add(btn);
         }
+
         dialog.add(keypad, BorderLayout.CENTER);
 
         dialog.addKeyListener(new KeyAdapter() {
@@ -874,8 +939,100 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 }
             }
         });
+
         dialog.setVisible(true);
     }
+
+    // ====================== STYLED CURRENCY COMBOBOX ======================
+    // ====================== STYLED CURRENCY COMBOBOX ======================
+// ====================== FIXED STYLED CURRENCY COMBOBOX ======================
+private JComboBox<String> createStyledCurrencyComboBox(String[] items) {
+    JComboBox<String> combo = new JComboBox<>(items) {
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // Background with glass effect
+            Color bg = new Color(30, 30, 35);   // Default
+            // Simple hover/pressed detection (safe for JComboBox)
+            if (isPopupVisible()) {
+                bg = new Color(45, 45, 52);
+            }
+
+            g2.setColor(bg);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
+
+            // Subtle inner glow
+            g2.setColor(new Color(255, 255, 255, 35));
+            g2.drawRoundRect(2, 2, getWidth() - 5, getHeight() - 5, 16, 16);
+
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    };
+
+    combo.setFont(new Font("Segoe UI", Font.PLAIN, 26));
+    combo.setForeground(Color.WHITE);
+    combo.setBackground(new Color(30, 30, 35));
+    combo.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+    combo.setFocusable(false);
+    combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+    // Make the combo box wide enough so selected text doesn't truncate with "..."
+    combo.setPreferredSize(new Dimension(160, 62));   // Increased width
+
+    // Custom renderer to prevent truncation in dropdown list
+    combo.setRenderer(new DefaultListCellRenderer() {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value,
+                int index, boolean isSelected, boolean cellHasFocus) {
+
+            JLabel label = (JLabel) super.getListCellRendererComponent(
+                    list, value, index, isSelected, cellHasFocus);
+
+            label.setFont(new Font("Segoe UI", Font.PLAIN, 22));
+            label.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+            label.setHorizontalAlignment(SwingConstants.LEFT);
+
+            // Prevent ellipsis in dropdown items
+            label.setText(value != null ? value.toString() : "");
+
+            if (isSelected) {
+                label.setBackground(new Color(80, 200, 255));
+                label.setForeground(new Color(20, 20, 25));
+            } else {
+                label.setBackground(new Color(32, 32, 38));
+                label.setForeground(Color.WHITE);
+            }
+
+            return label;
+        }
+    });
+
+    // Ensure the popup menu is wide enough
+    combo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+        @Override
+        public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
+            JComboBox<?> cb = (JComboBox<?>) e.getSource();
+            Object child = cb.getAccessibleContext().getAccessibleChild(0);
+            if (child instanceof JPopupMenu popup) {
+                popup.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 85), 1));
+                popup.setBackground(new Color(28, 28, 34));
+
+                // Force popup width to be at least as wide as the combo box + margin
+                popup.setPreferredSize(new Dimension(
+                    Math.max(cb.getWidth(), 180), 
+                    popup.getPreferredSize().height));
+            }
+        }
+
+        @Override public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
+        @Override public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {}
+    });
+
+    return combo;
+}
 
     private void openHistoryDialog() {
         JDialog dialog = new JDialog(this, "Calculation History", true);
@@ -883,17 +1040,20 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout(10, 10));
         dialog.getContentPane().setBackground(new Color(20, 20, 25));
+
         JLabel title = new JLabel("Calculation History");
         title.setFont(new Font("Segoe UI", Font.BOLD, 26));
         title.setForeground(new Color(80, 200, 255));
         title.setHorizontalAlignment(SwingConstants.CENTER);
         dialog.add(title, BorderLayout.NORTH);
+
         JTextArea historyArea = new JTextArea();
         historyArea.setEditable(false);
         historyArea.setFont(new Font("Segoe UI", Font.PLAIN, 20));
         historyArea.setBackground(new Color(30, 30, 35));
         historyArea.setForeground(Color.WHITE);
         historyArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
         if (history.isEmpty()) {
             historyArea.setText("No calculations performed yet.\n\nPress = on any calculation to add it here.");
         } else {
@@ -901,31 +1061,39 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             for (String entry : history) sb.append(entry).append("\n\n");
             historyArea.setText(sb.toString().trim());
         }
+
         JScrollPane scrollPane = new JScrollPane(historyArea);
         dialog.add(scrollPane, BorderLayout.CENTER);
+
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
         btnPanel.setBackground(new Color(20, 20, 25));
+
         JButton clearBtn = new JButton("Clear History");
         clearBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         clearBtn.setBackground(new Color(220, 50, 50));
         clearBtn.setForeground(Color.WHITE);
         clearBtn.setFocusPainted(false);
         clearBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
+
         JButton closeBtn = new JButton("Close");
         closeBtn.setFont(new Font("Segoe UI", Font.PLAIN, 18));
         closeBtn.setBackground(new Color(80, 200, 255));
         closeBtn.setForeground(Color.BLACK);
         closeBtn.setFocusPainted(false);
         closeBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
+
         btnPanel.add(clearBtn);
         btnPanel.add(closeBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
+
         clearBtn.addActionListener(ev -> {
             history.clear();
             saveHistory();
             historyArea.setText("History has been cleared.");
         });
+
         closeBtn.addActionListener(ev -> dialog.dispose());
+
         dialog.setVisible(true);
     }
 
