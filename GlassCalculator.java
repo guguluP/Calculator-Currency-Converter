@@ -1,5 +1,3 @@
-package JAVA.Methods;
-
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -13,9 +11,21 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * GlassCalculator - Final Project Version
+ * Trigonometric keyboard shortcuts strictly disabled in Basic mode
+ * 
+ * FEATURES:
+ * - Persistent history (saved across restarts)
+ * - Ctrl+A / Cmd+A and double-click to select all
+ * - Double Equals repeat (2×2=4=8=16=32...)
+ * - NEW: Keyboard = / Enter support in Currency Converter
+ *   (Just type amount and press = or Enter → instant live conversion)
+ */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
     private JTextField display;
     private boolean startNewInput = true;
+    private boolean inverseMode = false;
     private final String API_KEY = "97ab7ceab50c9baf51e43393";
     private final String[] currencies = {
             "USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "RUB",
@@ -26,6 +36,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private enum Mode { BASIC, SCIENTIFIC }
     private Mode currentMode = Mode.BASIC;
 
+    // Double Equals repeat feature
+    private String lastOperator = "";
+    private double lastOperand = 0.0;
+    private boolean isRepeatPossible = false;
+
     public GlassCalculator() {
         setTitle("Glass Calculator");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -33,7 +48,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         getContentPane().setBackground(new Color(20, 20, 25));
         setMacIcon();
 
-        // Top Panel
         JPanel topPanel = new JPanel(new BorderLayout(0, 0));
         topPanel.setBackground(new Color(20, 20, 25));
         topPanel.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 4));
@@ -44,6 +58,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.setBackground(new Color(30, 30, 35));
         display.setForeground(Color.WHITE);
         display.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        display.setCaretColor(new Color(80, 200, 255));
+        display.setCursor(new Cursor(Cursor.TEXT_CURSOR));
+        display.getCaret().setBlinkRate(530);
+        display.getCaret().setVisible(true);
         topPanel.add(display, BorderLayout.CENTER);
 
         JButton modeButton = new JButton("≡");
@@ -54,26 +72,37 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         modeButton.setFocusPainted(false);
         modeButton.setContentAreaFilled(false);
         modeButton.setOpaque(false);
+        modeButton.setFocusable(false);
         modeButton.addActionListener(e -> showModePopup(modeButton));
         topPanel.add(modeButton, BorderLayout.EAST);
+
         add(topPanel, BorderLayout.NORTH);
 
-        // Button Panel
         buttonPanel = new JPanel();
         buttonPanel.setBackground(new Color(20, 20, 25));
         buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         add(buttonPanel, BorderLayout.CENTER);
+
         updateButtonPanel();
 
-        // Keyboard Support
-        addKeyListener(this);
-        setFocusable(true);
-        requestFocusInWindow();
+        // Double-click selects all
+        display.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    display.selectAll();
+                }
+            }
+        });
 
-        // Window preferences
+        display.addKeyListener(this);
+        display.requestFocusInWindow();
+
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         setSize(prefs.getInt("width", 400), prefs.getInt("height", 620));
         setLocation(prefs.getInt("x", 200), prefs.getInt("y", 150));
+
+        loadHistory();
 
         addWindowListener(new WindowAdapter() {
             @Override
@@ -83,6 +112,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 p.putInt("height", getHeight());
                 p.putInt("x", getX());
                 p.putInt("y", getY());
+                saveHistory();
             }
         });
     }
@@ -100,16 +130,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 if (pngIcon != null) setIconImage(pngIcon);
             }
             try {
-                if (icnsIcon != null) {
-                    java.awt.Taskbar taskbar = java.awt.Taskbar.getTaskbar();
-                    if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
-                        taskbar.setIconImage(icnsIcon);
-                    }
-                }
+                if (icnsIcon != null) java.awt.Taskbar.getTaskbar().setIconImage(icnsIcon);
             } catch (Exception ignored) {}
-        } catch (Exception e) {
-            System.out.println("Could not load custom icon: " + e.getMessage());
-        }
+        } catch (Exception ignored) {}
+    }
+
+    private void updateDisplay(String text) {
+        display.setText(text);
+        SwingUtilities.invokeLater(() -> display.setCaretPosition(display.getText().length()));
     }
 
     private void updateButtonPanel() {
@@ -146,15 +174,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color bg = getModel().isPressed() ? new Color(255, 255, 255, 70) :
-                        getModel().isRollover() ? new Color(255, 255, 255, 45) :
-                                new Color(255, 255, 255, 22);
+                Color bg = getModel().isPressed() ? new Color(255, 255, 255, 175) :
+                        getModel().isRollover() ? new Color(255, 255, 255, 75) :
+                                new Color(255, 255, 255, 32);
                 g2.setColor(bg);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 22, 22);
-                g2.setColor(new Color(255, 255, 255, 55));
-                g2.drawRoundRect(2, 2, getWidth() - 5, getHeight() - 5, 20, 20);
-                super.paintComponent(g2);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 24, 24);
+                g2.setColor(getModel().isPressed() ? new Color(255, 255, 255, 110) : new Color(255, 255, 255, 55));
+                g2.drawRoundRect(3, 3, getWidth() - 7, getHeight() - 7, 20, 20);
                 g2.dispose();
+                super.paintComponent(g);
             }
         };
         btn.setFont(new Font("Segoe UI", Font.PLAIN, text.length() > 3 ? 18 : 24));
@@ -163,9 +191,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         btn.setBorder(BorderFactory.createEmptyBorder(18, 10, 18, 10));
         btn.setContentAreaFilled(false);
         btn.setOpaque(false);
-        if ("÷×−+".contains(text)) btn.setForeground(new Color(255, 165, 50));
-        if ("AC%C=±".contains(text)) btn.setForeground(new Color(80, 200, 255));
+        btn.setFocusable(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         return btn;
+    }
+
+    private void toggleInverseMode() {
+        inverseMode = !inverseMode;
+        highlightButton("INV");
     }
 
     private void showModePopup(Component invoker) {
@@ -174,23 +207,29 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         popup.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 80), 1),
                 BorderFactory.createEmptyBorder(8, 4, 8, 4)));
+
         JMenuItem basicItem = new JMenuItem(currentMode == Mode.BASIC ? " ✓ Basic" : " Basic");
         stylePopupItem(basicItem);
         basicItem.addActionListener(e -> { currentMode = Mode.BASIC; updateButtonPanel(); });
         popup.add(basicItem);
+
         JMenuItem scientificItem = new JMenuItem(currentMode == Mode.SCIENTIFIC ? " ✓ Scientific" : " Scientific");
         stylePopupItem(scientificItem);
         scientificItem.addActionListener(e -> { currentMode = Mode.SCIENTIFIC; updateButtonPanel(); });
         popup.add(scientificItem);
+
         popup.addSeparator();
+
         JMenuItem convertItem = new JMenuItem(" Convert");
         stylePopupItem(convertItem);
         convertItem.addActionListener(e -> openCurrencyConverter());
         popup.add(convertItem);
+
         JMenuItem historyItem = new JMenuItem(" History");
         stylePopupItem(historyItem);
         historyItem.addActionListener(e -> openHistoryDialog());
         popup.add(historyItem);
+
         popup.show(invoker, invoker.getWidth() - 240, invoker.getHeight() + 4);
     }
 
@@ -203,103 +242,135 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        String cmd = ((JButton) e.getSource()).getText();
+        JButton source = (JButton) e.getSource();
+        String cmd = source.getText();
+        highlightButton(cmd);
         switch (cmd) {
             case "AC" -> resetCalculator();
-            case "C" -> handleBackspace();
+            case "C" -> deleteLeftOfCursor();
             case "%" -> handlePercentage();
             case "±" -> handleSignChange();
             case "=" -> handleEquals();
-            case "√" -> handleUnary("√(");
-            case "x²" -> { display.setText(display.getText() + "^2"); startNewInput = false; }
-            case "xʸ" -> handleOperator("xʸ");
-            case "sin","cos","tan","log","ln" -> handleTrigOrLog(cmd);
-            case "π" -> insertConstant(Math.PI);
-            case "e" -> insertConstant(Math.E);
-            case "1/x" -> { display.setText("1/(" + display.getText() + ")"); startNewInput = false; }
+            case "√" -> insertAtCursor("√(");
+            case "x²" -> insertAtCursor("^2");
+            case "xʸ" -> insertAtCursor("^");
+            case "sin" -> insertAtCursor(inverseMode ? "asin(" : "sin(");
+            case "cos" -> insertAtCursor(inverseMode ? "acos(" : "cos(");
+            case "tan" -> insertAtCursor(inverseMode ? "atan(" : "tan(");
+            case "log" -> insertAtCursor("log(");
+            case "ln" -> insertAtCursor("ln(");
+            case "π" -> insertAtCursor(String.valueOf(Math.PI));
+            case "e" -> insertAtCursor(String.valueOf(Math.E));
+            case "1/x" -> insertAtCursor("1/(");
             case "!" -> handleFactorial();
-            case "(" -> insertText("(");
-            case ")" -> insertText(")");
-            case "INV" -> {}
+            case "(" -> insertAtCursor("(");
+            case ")" -> insertAtCursor(")");
+            case "INV" -> toggleInverseMode();
             default -> {
-                if (cmd.matches("[0-9.]")) handleNumberOrDecimal(cmd);
-                else if ("÷×−+".contains(cmd)) handleOperator(cmd);
+                if (cmd.matches("[0-9.]") || "÷×−+^".contains(cmd)) {
+                    insertAtCursor(cmd);
+                }
             }
         }
     }
 
-    // ====================== KEYBOARD SUPPORT ======================
+    private void deleteLeftOfCursor() {
+        int pos = display.getCaretPosition();
+        if (pos > 0) {
+            String text = display.getText();
+            String newText = text.substring(0, pos - 1) + text.substring(pos);
+            display.setText(newText);
+            display.setCaretPosition(pos - 1);
+        }
+    }
+
+    private void insertAtCursor(String text) {
+        String current = display.getText().trim();
+        if (startNewInput && (current.equals("0") || current.equals("0."))) {
+            display.setText(text);
+            display.setCaretPosition(text.length());
+        } else {
+            int pos = display.getCaretPosition();
+            String newText = current.substring(0, pos) + text + current.substring(pos);
+            display.setText(newText);
+            display.setCaretPosition(pos + text.length());
+        }
+        startNewInput = false;
+    }
+
     @Override
     public void keyPressed(KeyEvent e) {
-        char ch = e.getKeyChar();
-        int key = e.getKeyCode();
-        if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) { handleEquals(); return; }
-        if (key == KeyEvent.VK_BACK_SPACE) { handleBackspace(); return; }
-        if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) { resetCalculator(); return; }
-        switch (ch) {
-            case '0','1','2','3','4','5','6','7','8','9','.' -> handleNumberOrDecimal(String.valueOf(ch));
-            case '+','-','*','/','^' -> handleOperatorFromKeyboard(ch);
-            case '(' -> insertText("(");
-            case ')' -> insertText(")");
-            case 's','S' -> handleTrigOrLog("sin");
-            case 'c','C' -> handleTrigOrLog("cos");
-            case 't','T' -> handleTrigOrLog("tan");
-            case 'l','L' -> handleTrigOrLog("log");
-            case 'n','N' -> handleTrigOrLog("ln");
-            case 'p','P' -> insertConstant(Math.PI);
-            case 'e','E' -> insertConstant(Math.E);
-            case 'r','R' -> handleUnary("√(");
-            case '!' -> handleFactorial();
-            case '%' -> handlePercentage();
-        }
-    }
-
-    private void handleOperatorFromKeyboard(char ch) {
-        String op = switch (ch) {
-            case '*' -> "×"; case '/' -> "÷"; case '-' -> "−"; case '+' -> "+"; case '^' -> "xʸ";
-            default -> String.valueOf(ch);
-        };
-        handleOperator(op);
-    }
-
-    private void insertText(String text) {
-        String current = display.getText();
-        display.setText(startNewInput ? text : current + text);
-        startNewInput = false;
-    }
-
-    private void insertConstant(double value) {
-        String valStr = formatResult(value);
-        String current = display.getText();
-        display.setText((startNewInput || current.equals("0")) ? valStr : current + valStr);
-        startNewInput = false;
-    }
-
-    // ====================== CORE METHODS ======================
-    private void handleNumberOrDecimal(String cmd) {
-        String current = display.getText();
-        if (startNewInput) {
-            display.setText(cmd.equals(".") ? "0." : cmd);
-            startNewInput = false;
+        if (e.isControlDown() && e.getKeyCode() == KeyEvent.VK_A ||
+            e.isMetaDown() && e.getKeyCode() == KeyEvent.VK_A) {
+            display.selectAll();
+            e.consume();
             return;
         }
-        if (cmd.equals(".") && getLastNumber(current).contains(".")) return;
-        if (current.equals("0") && !cmd.equals(".")) display.setText(cmd);
-        else display.setText(current + cmd);
+
+        char ch = e.getKeyChar();
+        int key = e.getKeyCode();
+        if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) { handleEquals(); highlightButton("="); e.consume(); return; }
+        if (key == KeyEvent.VK_BACK_SPACE) { deleteLeftOfCursor(); highlightButton("C"); e.consume(); return; }
+        if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) { resetCalculator(); highlightButton("AC"); e.consume(); return; }
+
+        switch (ch) {
+            case '0' -> { insertAtCursor("0"); highlightButton("0"); e.consume(); }
+            case '1' -> { insertAtCursor("1"); highlightButton("1"); e.consume(); }
+            case '2' -> { insertAtCursor("2"); highlightButton("2"); e.consume(); }
+            case '3' -> { insertAtCursor("3"); highlightButton("3"); e.consume(); }
+            case '4' -> { insertAtCursor("4"); highlightButton("4"); e.consume(); }
+            case '5' -> { insertAtCursor("5"); highlightButton("5"); e.consume(); }
+            case '6' -> { insertAtCursor("6"); highlightButton("6"); e.consume(); }
+            case '7' -> { insertAtCursor("7"); highlightButton("7"); e.consume(); }
+            case '8' -> { insertAtCursor("8"); highlightButton("8"); e.consume(); }
+            case '9' -> { insertAtCursor("9"); highlightButton("9"); e.consume(); }
+            case '.' -> { insertAtCursor("."); highlightButton("."); e.consume(); }
+            case '+' -> { insertAtCursor("+"); highlightButton("+"); e.consume(); }
+            case '-' -> { insertAtCursor("−"); highlightButton("−"); e.consume(); }
+            case '*' -> { insertAtCursor("×"); highlightButton("×"); e.consume(); }
+            case '/' -> { insertAtCursor("÷"); highlightButton("÷"); e.consume(); }
+            case '^' -> { insertAtCursor("^"); highlightButton("xʸ"); e.consume(); }
+            case '(' -> { insertAtCursor("("); highlightButton("("); e.consume(); }
+            case ')' -> { insertAtCursor(")"); highlightButton(")"); e.consume(); }
+        }
+
+        if (currentMode == Mode.SCIENTIFIC) {
+            switch (ch) {
+                case 's','S' -> { insertAtCursor(inverseMode ? "asin(" : "sin("); highlightButton("sin"); e.consume(); }
+                case 'c','C' -> { insertAtCursor(inverseMode ? "acos(" : "cos("); highlightButton("cos"); e.consume(); }
+                case 't','T' -> { insertAtCursor(inverseMode ? "atan(" : "tan("); highlightButton("tan"); e.consume(); }
+                case 'l','L' -> { insertAtCursor("log("); highlightButton("log"); e.consume(); }
+                case 'n','N' -> { insertAtCursor("ln("); highlightButton("ln"); e.consume(); }
+                case 'p','P' -> { insertAtCursor(String.valueOf(Math.PI)); highlightButton("π"); e.consume(); }
+                case 'e','E' -> { insertAtCursor(String.valueOf(Math.E)); highlightButton("e"); e.consume(); }
+                case 'r','R' -> { insertAtCursor("√("); highlightButton("√"); e.consume(); }
+                case '!' -> { handleFactorial(); highlightButton("!"); e.consume(); }
+            }
+        }
+
+        if (ch == '%') {
+            handlePercentage();
+            highlightButton("%");
+            e.consume();
+        }
     }
 
-    private String getLastNumber(String expr) {
-        String[] parts = expr.split("[÷×−+^]");
-        return parts.length > 0 ? parts[parts.length - 1].trim() : "";
-    }
-
-    private void handleBackspace() {
-        String current = display.getText().trim();
-        if (current.equals("0") || current.isEmpty()) return;
-        String newText = current.substring(0, current.length() - 1).trim();
-        if (newText.endsWith(" ")) newText = newText.substring(0, newText.length() - 1).trim();
-        display.setText(newText.isEmpty() ? "0" : newText);
-        startNewInput = false;
+    private void highlightButton(String text) {
+        if (text == null || buttonPanel == null) return;
+        for (Component c : buttonPanel.getComponents()) {
+            if (c instanceof JButton btn && text.equals(btn.getText())) {
+                ButtonModel model = btn.getModel();
+                model.setPressed(true);
+                btn.repaint();
+                Timer timer = new Timer(160, ev -> {
+                    model.setPressed(false);
+                    btn.repaint();
+                });
+                timer.setRepeats(false);
+                timer.start();
+                return;
+            }
+        }
     }
 
     private void handlePercentage() {
@@ -309,29 +380,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             display.setText(formatResult(val / 100));
             startNewInput = true;
         } catch (Exception ignored) {}
-    }
-
-    private void handleOperator(String cmd) {
-        String current = display.getText().trim();
-        if (current.isEmpty() || endsWithOperator(current)) return;
-        String symbol = switch (cmd) {
-            case "÷" -> "÷"; case "×" -> "×"; case "−" -> "−"; case "+" -> "+"; case "xʸ" -> "^";
-            default -> cmd;
-        };
-        display.setText(current + " " + symbol + " ");
-        startNewInput = false;
-    }
-
-    private void handleTrigOrLog(String cmd) {
-        String current = display.getText();
-        display.setText(startNewInput ? cmd + "(" : current + cmd + "(");
-        startNewInput = false;
-    }
-
-    private void handleUnary(String prefix) {
-        String current = display.getText();
-        display.setText(prefix + current + ")");
-        startNewInput = false;
     }
 
     private void handleFactorial() {
@@ -351,56 +399,106 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         String current = display.getText().trim();
         if (current.isEmpty() || current.equals("0") || current.equals("Error")) return;
         try {
-            if (current.contains(" ")) {
-                String last = getLastNumber(current);
-                if (!last.isEmpty()) {
-                    double val = Double.parseDouble(last);
-                    String newLast = formatResult(-val);
-                    display.setText(current.substring(0, current.lastIndexOf(last)) + newLast);
-                }
-            } else {
-                double val = Double.parseDouble(current);
-                display.setText(formatResult(-val));
-            }
+            double val = Double.parseDouble(current);
+            display.setText(formatResult(-val));
         } catch (Exception ignored) {}
     }
 
-    private boolean endsWithOperator(String text) {
-        if (text.isEmpty()) return false;
-        char last = text.charAt(text.length() - 1);
-        return "÷×−+^".indexOf(last) != -1;
-    }
-
-    // ====================== FIXED PURE-JAVA EVALUATOR (NO SCRIPTENGINE) ======================
     private void handleEquals() {
-        String originalExpr = display.getText().trim();
-        if (originalExpr.isEmpty()) return;
+        String currentText = display.getText().trim();
+        if (currentText.isEmpty()) return;
 
         try {
-            double result = evaluateExpression(originalExpr);
-            String resultStr = formatResult(result);
-            display.setText(resultStr);
-            history.add(0, originalExpr + " = " + resultStr);
-            if (history.size() > 100) history.remove(history.size() - 1);
+            if (isRepeatPossible && startNewInput && !lastOperator.isEmpty()) {
+                double currentValue = Double.parseDouble(currentText);
+                double newResult = applyLastOperation(currentValue);
+                String formatted = formatResult(newResult);
+                display.setText(formatted);
+            } else {
+                double result = evaluateExpression(currentText);
+                String formatted = formatResult(result);
+                display.setText(formatted);
+
+                history.add(0, currentText + " = " + formatted);
+                if (history.size() > 100) history.remove(history.size() - 1);
+                saveHistory();
+
+                extractLastOperation(currentText);
+            }
+
+            isRepeatPossible = true;
+            startNewInput = true;
+
         } catch (Exception ex) {
             display.setText("Error");
+            isRepeatPossible = false;
         }
-        startNewInput = true;
     }
 
-    private double evaluateExpression(String expr) throws Exception {
-        // Clean input
+    private void extractLastOperation(String expr) {
         String cleaned = expr.replace(" ", "")
                 .replace("×", "*")
                 .replace("÷", "/")
                 .replace("−", "-")
                 .replace("xʸ", "^");
 
-        // Pure Java recursive parser (supports all features)
+        lastOperator = "";
+        lastOperand = 0.0;
+
+        int lastOpIndex = -1;
+        char lastOpChar = 0;
+        for (int i = cleaned.length() - 1; i >= 0; i--) {
+            char c = cleaned.charAt(i);
+            if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') &&
+                i > 0 && i < cleaned.length() - 1) {
+                lastOpIndex = i;
+                lastOpChar = c;
+                break;
+            }
+        }
+        if (lastOpIndex == -1) return;
+
+        String rightPart = cleaned.substring(lastOpIndex + 1);
+        int numEnd = 0;
+        while (numEnd < rightPart.length()) {
+            char ch = rightPart.charAt(numEnd);
+            if (Character.isDigit(ch) || ch == '.' ||
+                (numEnd == 0 && ch == '-')) {
+                numEnd++;
+            } else {
+                break;
+            }
+        }
+
+        if (numEnd > 0) {
+            String numberStr = rightPart.substring(0, numEnd);
+            try {
+                lastOperand = Double.parseDouble(numberStr);
+                lastOperator = String.valueOf(lastOpChar);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private double applyLastOperation(double left) throws Exception {
+        switch (lastOperator) {
+            case "+": return left + lastOperand;
+            case "-": return left - lastOperand;
+            case "*": return left * lastOperand;
+            case "/": return (lastOperand == 0) ? 0 : left / lastOperand;
+            case "^": return Math.pow(left, lastOperand);
+            default: throw new Exception("No operation to repeat");
+        }
+    }
+
+    private double evaluateExpression(String expr) throws Exception {
+        String cleaned = expr.replace(" ", "")
+                .replace("×", "*")
+                .replace("÷", "/")
+                .replace("−", "-")
+                .replace("xʸ", "^");
         return new ExpressionParser(cleaned).parse();
     }
 
-    // ====================== TINY PURE-JAVA PARSER (no external deps) ======================
     private static class ExpressionParser {
         private final String input;
         private int pos = 0;
@@ -434,9 +532,30 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     pos++;
                     double next = parseFactor();
                     value = (op == '*') ? value * next : (next == 0 ? 0 : value / next);
-                } else break;
+                } else if (isStartOfFactor()) {
+                    double next = parseFactor();
+                    value *= next;
+                } else {
+                    break;
+                }
             }
             return value;
+        }
+
+        private boolean isStartOfFactor() {
+            if (pos >= input.length()) return false;
+            char c = input.charAt(pos);
+            if (Character.isDigit(c) || c == '.' || c == '(' || c == '√' || c == 'π') {
+                return true;
+            }
+            if (c == 'e' && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos + 1)))) {
+                return true;
+            }
+            String remaining = input.substring(pos);
+            return remaining.startsWith("sin(") || remaining.startsWith("cos(") ||
+                    remaining.startsWith("tan(") || remaining.startsWith("asin(") ||
+                    remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
+                    remaining.startsWith("log(") || remaining.startsWith("ln(");
         }
 
         private double parseFactor() throws Exception {
@@ -445,7 +564,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 char op = input.charAt(pos);
                 if (op == '^') {
                     pos++;
-                    double exp = parseFactor(); // right-associative
+                    double exp = parseFactor();
                     value = Math.pow(value, exp);
                 } else break;
             }
@@ -454,11 +573,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
         private double parsePrimary() throws Exception {
             if (pos >= input.length()) throw new Exception("Unexpected end");
-
             char c = input.charAt(pos);
-            if (Character.isDigit(c) || c == '.') {
-                return parseNumber();
-            }
+            if (Character.isDigit(c) || c == '.') return parseNumber();
             if (c == '(') {
                 pos++;
                 double value = parseExpression();
@@ -466,24 +582,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 else throw new Exception("Missing )");
                 return value;
             }
-            if (c == 's' && input.startsWith("sin(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')'); return Math.sin(v);
-            }
-            if (c == 'c' && input.startsWith("cos(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')'); return Math.cos(v);
-            }
-            if (c == 't' && input.startsWith("tan(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')'); return Math.tan(v);
-            }
-            if (c == 'l' && input.startsWith("log(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')'); return Math.log10(v);
-            }
-            if (c == 'l' && input.startsWith("ln(", pos)) {
-                pos += 3; double v = parseExpression(); expect(')'); return Math.log(v);
-            }
-            if (c == '√' && input.startsWith("√(", pos)) {
-                pos += 2; double v = parseExpression(); expect(')'); return Math.sqrt(v);
-            }
+            if (c == 'a' && input.startsWith("asin(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.toDegrees(Math.asin(v)); }
+            if (c == 'a' && input.startsWith("acos(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.toDegrees(Math.acos(v)); }
+            if (c == 'a' && input.startsWith("atan(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.toDegrees(Math.atan(v)); }
+            if (c == 's' && input.startsWith("sin(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.sin(Math.toRadians(v)); }
+            if (c == 'c' && input.startsWith("cos(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.cos(Math.toRadians(v)); }
+            if (c == 't' && input.startsWith("tan(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.tan(Math.toRadians(v)); }
+            if (c == 'l' && input.startsWith("log(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.log10(v); }
+            if (c == 'l' && input.startsWith("ln(", pos)) { pos += 3; double v = parseExpression(); expect(')'); return Math.log(v); }
+            if (c == '√' && input.startsWith("√(", pos)) { pos += 2; double v = parseExpression(); expect(')'); return Math.sqrt(v); }
             if (input.startsWith("π", pos)) { pos += 1; return Math.PI; }
             if (input.startsWith("e", pos) && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos+1)))) {
                 pos += 1; return Math.E;
@@ -503,38 +610,51 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
     }
 
-   private String formatResult(double result) {
-    if (Double.isNaN(result) || Double.isInfinite(result)) return "Error";
-    
-    double absResult = Math.abs(result);
-    
-    // Use clean scientific notation for very large (>= 10 billion) or very small numbers
-    if (absResult >= 1e10 || (absResult > 0 && absResult < 1e-6)) {
-        String sci = String.format("%.8g", result);
-        return sci.replace('e', 'E');   // e.g. 1.23456789E+12 or 1.23456789E-7
+    private String formatResult(double result) {
+        if (Double.isNaN(result) || Double.isInfinite(result)) return "Error";
+        if (Math.abs(result) < 1e-10) return "0";
+        double absResult = Math.abs(result);
+        if (absResult >= 1e10 || (absResult > 0 && absResult < 1e-6)) {
+            String sci = String.format("%.8g", result);
+            return sci.replace('e', 'E');
+        }
+        if (result == (long) result) return String.valueOf((long) result);
+        String formatted = String.format("%.8f", result);
+        return formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
     }
-    
-    // Normal nice formatting for regular numbers
-    if (result == (long) result) {
-        return String.valueOf((long) result);
-    }
-    
-    String formatted = String.format("%.8f", result);
-    return formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
-}
 
     private void resetCalculator() {
         display.setText("0");
         startNewInput = true;
+        isRepeatPossible = false;
+        lastOperator = "";
+        lastOperand = 0.0;
     }
 
-    // ====================== CURRENCY & HISTORY (unchanged) ======================
+    private void loadHistory() {
+        Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
+        history.clear();
+        int count = prefs.getInt("historyCount", 0);
+        for (int i = 0; i < count; i++) {
+            String entry = prefs.get("history_" + i, null);
+            if (entry != null && !entry.trim().isEmpty()) {
+                history.add(entry);
+            }
+        }
+    }
 
-    // ... (openCurrencyConverter, fetchLiveRates, openHistoryDialog remain exactly the same as in the last full version I sent)
+    private void saveHistory() {
+        Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
+        int oldCount = prefs.getInt("historyCount", 0);
+        prefs.putInt("historyCount", history.size());
+        for (int i = 0; i < history.size(); i++) {
+            prefs.put("history_" + i, history.get(i));
+        }
+        for (int i = history.size(); i < oldCount + 20; i++) {
+            prefs.remove("history_" + i);
+        }
+    }
 
-    @Override public void keyTyped(KeyEvent e) {}
-    @Override public void keyReleased(KeyEvent e) {}
-    // ====================== CURRENCY CONVERTER ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
         dialog.setSize(460, 460);
@@ -598,6 +718,19 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         gbc.gridx = 1;
         dialog.add(closeBtn, gbc);
 
+        // ====================== KEYBOARD EQUALS IN CURRENCY CONVERTER ======================
+        // Press = or Enter in the amount field → instantly triggers conversion
+        amountField.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_EQUALS) {
+                    convertBtn.doClick();
+                    e.consume();
+                }
+            }
+        });
+        // =================================================================================
+
         convertBtn.addActionListener(ev -> {
             try {
                 double amount = Double.parseDouble(amountField.getText().trim());
@@ -613,15 +746,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 double converted = amount * rate;
                 resultLabel.setText(String.format("%.4f %s = %.4f %s", amount, from, converted, to));
                 rateLabel.setText(String.format("1 %s = %.4f %s", from, rate, to));
-            } catch (NumberFormatException ex) {
-                resultLabel.setText("Invalid amount");
-                rateLabel.setText("");
             } catch (Exception ex) {
                 resultLabel.setText("Failed to fetch live rates");
-                rateLabel.setText("Check your internet");
-                ex.printStackTrace();
             }
         });
+
         closeBtn.addActionListener(ev -> dialog.dispose());
         dialog.setVisible(true);
     }
@@ -633,13 +762,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(10000);
-
         StringBuilder content = new StringBuilder();
         try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
             String inputLine;
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
+            while ((inputLine = in.readLine()) != null) content.append(inputLine);
         }
         conn.disconnect();
 
@@ -647,11 +773,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         Map<String, Double> rates = new HashMap<>();
         int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
         if (ratesStart == -1) throw new Exception("Invalid API response");
-
         int openBrace = jsonStr.indexOf('{', ratesStart);
         int closeBrace = jsonStr.indexOf('}', openBrace);
-        if (closeBrace == -1) closeBrace = jsonStr.length();
-
         String ratesSection = jsonStr.substring(openBrace + 1, closeBrace);
         String[] pairs = ratesSection.split(",");
         for (String pair : pairs) {
@@ -669,7 +792,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         return rates;
     }
 
-    // ====================== HISTORY DIALOG ======================
     private void openHistoryDialog() {
         JDialog dialog = new JDialog(this, "Calculation History", true);
         dialog.setSize(520, 520);
@@ -694,18 +816,16 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             historyArea.setText("No calculations performed yet.\n\nPress = on any calculation to add it here.");
         } else {
             StringBuilder sb = new StringBuilder();
-            for (String entry : history) {
-                sb.append(entry).append("\n\n");
-            }
+            for (String entry : history) sb.append(entry).append("\n\n");
             historyArea.setText(sb.toString().trim());
         }
 
         JScrollPane scrollPane = new JScrollPane(historyArea);
-        scrollPane.setBorder(BorderFactory.createEmptyBorder());
         dialog.add(scrollPane, BorderLayout.CENTER);
 
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
         btnPanel.setBackground(new Color(20, 20, 25));
+
         JButton clearBtn = new JButton("Clear History");
         clearBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         clearBtn.setBackground(new Color(220, 50, 50));
@@ -726,11 +846,18 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
         clearBtn.addActionListener(ev -> {
             history.clear();
+            saveHistory();
             historyArea.setText("History has been cleared.");
         });
+
         closeBtn.addActionListener(ev -> dialog.dispose());
+
         dialog.setVisible(true);
     }
+
+    @Override public void keyTyped(KeyEvent e) {}
+    @Override public void keyReleased(KeyEvent e) {}
+
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignored) {}
