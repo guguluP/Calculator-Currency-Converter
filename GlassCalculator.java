@@ -10,21 +10,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
+import java.awt.image.BufferedImage;
 
 /**
- * GlassCalculator - Final Project Version (FIXED)
- * ALL ERRORS FIXED:
- * 1. Lambda variable capture in currency keypad (all buttons now work independently).
- * 2. insertAtCursor() now correctly replaces display for digits, ".", π, e, Rand after =.
- * 3. ExpressionParser fully supports Unicode operators (× ÷ −).
- * 4. Trigonometric / function buttons (sin, asin, √, log, etc.) no longer produce "0sin(".
- * 5. NEW: Full () support with auto-closing missing parentheses.
- *    - sin(45)  → works (≈0.707 in degrees)
- *    - sin(45   → now automatically treated as sin(45) on "=" (no more Error)
- *    - Nested: sin(cos(30   → also auto-closes all missing )
- *    - Still strict error on truly invalid expressions (sin(45+ or extra chars)
+ * GlassCalculator - Final Version with AppIcon.icns + Full Currency Converter
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
+
     private JTextField display;
     private boolean startNewInput = true;
     private final String API_KEY = "97ab7ceab50c9baf51e43393";
@@ -34,17 +26,18 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     };
     private List<String> history = new ArrayList<>();
     private JPanel buttonPanel;
+
     private enum Mode { BASIC, SCIENTIFIC }
     private Mode currentMode = Mode.BASIC;
     private String lastOperator = "";
     private double lastOperand = 0.0;
     private boolean isRepeatPossible = false;
-    // Memory & Rad/Deg support
+
     private double memory = 0.0;
-    private boolean radianMode = false; // false = degrees (macOS default)
-    // 2nd button toggle for trigonometric functions
+    private boolean radianMode = false;
     private boolean inverseMode = false;
-    // ====================== OPTIMIZED GLOBAL CURRENCY CACHE ======================
+
+    // Currency Cache
     private static class CachedRates {
         final Map<String, Double> rates;
         final long timestamp;
@@ -60,6 +53,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             return System.currentTimeMillis() - timestamp > 300_000; // 5 minutes
         }
     }
+
     private static final Map<String, CachedRates> rateCache = new HashMap<>();
 
     public GlassCalculator() {
@@ -67,11 +61,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
         getContentPane().setBackground(new Color(20, 20, 25));
-        setMacIcon();
+
+        // Load App Icon (AppIcon.icns)
+        setAppIcon();
 
         JPanel topPanel = new JPanel(new BorderLayout(0, 0));
         topPanel.setBackground(new Color(20, 20, 25));
         topPanel.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 4));
+
         display = new JTextField("0");
         display.setEditable(false);
         display.setHorizontalAlignment(JTextField.RIGHT);
@@ -83,6 +80,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.setCursor(new Cursor(Cursor.TEXT_CURSOR));
         display.getCaret().setBlinkRate(530);
         display.getCaret().setVisible(true);
+
         topPanel.add(display, BorderLayout.CENTER);
 
         JButton modeButton = new JButton("≡");
@@ -95,8 +93,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         modeButton.setOpaque(false);
         modeButton.setFocusable(false);
         modeButton.addActionListener(e -> showModePopup(modeButton));
-        topPanel.add(modeButton, BorderLayout.EAST);
 
+        topPanel.add(modeButton, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
         buttonPanel = new JPanel();
@@ -109,17 +107,17 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    display.selectAll();
-                }
+                if (e.getClickCount() == 2) display.selectAll();
             }
         });
+
         display.addKeyListener(this);
         display.requestFocusInWindow();
 
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         setSize(prefs.getInt("width", 400), prefs.getInt("height", 620));
         setLocation(prefs.getInt("x", 200), prefs.getInt("y", 150));
+
         loadHistory();
 
         addWindowListener(new WindowAdapter() {
@@ -135,22 +133,78 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         });
     }
 
-    private void setMacIcon() {
-        try {
-            Image icnsIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("/AppIcon.icns"));
-            if (icnsIcon != null) setIconImage(icnsIcon);
-            else {
-                icnsIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("AppIcon.icns"));
-                if (icnsIcon != null) setIconImage(icnsIcon);
-            }
-            if (icnsIcon == null) {
-                Image pngIcon = Toolkit.getDefaultToolkit().getImage(getClass().getResource("/AppIcon.png"));
-                if (pngIcon != null) setIconImage(pngIcon);
-            }
+    // ====================== APP ICON (AppIcon.icns) ======================
+    private void setAppIcon() {
+        String[] iconPaths = {
+                "/AppIcon.icns", "AppIcon.icns",
+                "/AppIcon.png",  "AppIcon.png",
+                "/icon.png",     "icon.png"
+        };
+
+        Image icon = null;
+
+        for (String path : iconPaths) {
             try {
-                if (icnsIcon != null) java.awt.Taskbar.getTaskbar().setIconImage(icnsIcon);
+                URL url = getClass().getResource(path);
+                if (url != null) {
+                    icon = Toolkit.getDefaultToolkit().getImage(url);
+                    System.out.println("✅ App icon loaded: " + path);
+                    break;
+                }
             } catch (Exception ignored) {}
-        } catch (Exception ignored) {}
+        }
+
+        if (icon == null) {
+            icon = createFallbackIcon();
+            System.out.println("⚠️ Using fallback icon (AppIcon.icns not found)");
+        }
+
+        if (icon != null) {
+            setIconImage(icon);
+            try {
+                if (Taskbar.isTaskbarSupported()) {
+                    Taskbar.getTaskbar().setIconImage(icon);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private Image createFallbackIcon() {
+        int size = 512;
+        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = img.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        g2.setColor(new Color(45, 45, 55));
+        g2.fillRoundRect(40, 40, size - 80, size - 80, 90, 90);
+
+        g2.setColor(new Color(255, 255, 255, 70));
+        g2.fillRoundRect(55, 55, size - 110, 90, 60, 60);
+
+        g2.setColor(new Color(25, 25, 32));
+        g2.fillRoundRect(95, 130, size - 190, size - 230, 35, 35);
+
+        g2.setColor(new Color(15, 15, 22));
+        g2.fillRoundRect(115, 150, size - 230, 75, 18, 18);
+
+        g2.setColor(new Color(55, 55, 65));
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                int x = 120 + col * 58;
+                int y = 245 + row * 58;
+                g2.fillRoundRect(x, y, 48, 48, 14, 14);
+            }
+        }
+
+        g2.setColor(new Color(255, 165, 0));
+        for (int row = 0; row < 4; row++) {
+            int x = 120 + 3 * 58;
+            int y = 245 + row * 58;
+            g2.fillRoundRect(x, y, 48, 48, 14, 14);
+        }
+
+        g2.dispose();
+        return img;
     }
 
     private void updateButtonPanel() {
@@ -162,12 +216,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             for (String text : buttons) {
                 JButton btn = createGlassButton(text);
                 btn.addActionListener(this);
-                if ("÷×−+=".contains(text)) {
-                    btn.setForeground(new Color(255, 170, 0));
-                }
+                if ("÷×−+=".contains(text)) btn.setForeground(new Color(255, 170, 0));
                 buttonPanel.add(btn);
             }
-        } else { // SCIENTIFIC - full macOS layout (5×10) with dynamic 2nd mode
+        } else {
             buttonPanel.setLayout(new GridLayout(5, 10, 8, 8));
             String sinLabel = inverseMode ? "sin⁻¹" : "sin";
             String cosLabel = inverseMode ? "cos⁻¹" : "cos";
@@ -175,6 +227,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             String sinhLabel = inverseMode ? "sinh⁻¹" : "sinh";
             String coshLabel = inverseMode ? "cosh⁻¹" : "cosh";
             String tanhLabel = inverseMode ? "tanh⁻¹" : "tanh";
+
             String[] sciButtons = {
                     "(", ")", "mc", "m+", "m-", "mr", "⌫", "AC", "%", "÷",
                     "2nd", "x²", "x³", "xʸ", "yˣ", "2ˣ", "7", "8", "9", "×",
@@ -182,16 +235,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     "x!", sinLabel, cosLabel, tanLabel, "e", "EE", "1", "2", "3", "+",
                     "Rand", sinhLabel, coshLabel, tanhLabel, "π", "Rad", "+/-", "0", ".", "="
             };
+
             for (String text : sciButtons) {
                 JButton btn = createGlassButton(text);
                 btn.addActionListener(this);
-                if ("÷×−+=".contains(text)) {
-                    btn.setForeground(new Color(255, 170, 0));
-                } else if (" 2nd x² x³ xʸ yˣ 2ˣ 1/x ²√x ³√x ʸ√x logy log₂ x! sin sin⁻¹ cos cos⁻¹ tan tan⁻¹ e EE sinh sinh⁻¹ cosh cosh⁻¹ tanh tanh⁻¹ π Rad ( ) ".contains(" " + text + " ")) {
+                if ("÷×−+=".contains(text)) btn.setForeground(new Color(255, 170, 0));
+                else if (" 2nd x² x³ xʸ yˣ 2ˣ 1/x ²√x ³√x ʸ√x logy log₂ x! sin sin⁻¹ cos cos⁻¹ tan tan⁻¹ e EE sinh sinh⁻¹ cosh cosh⁻¹ tanh tanh⁻¹ π Rad ( ) ".contains(" " + text + " "))
                     btn.setForeground(new Color(100, 220, 255));
-                } else if ("mc m+ m- mr".contains(text)) {
+                else if ("mc m+ m- mr".contains(text))
                     btn.setForeground(new Color(180, 180, 190));
-                }
                 buttonPanel.add(btn);
             }
         }
@@ -207,7 +259,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 Color bg = getModel().isPressed() ? new Color(255, 255, 255, 175) :
                         getModel().isRollover() ? new Color(255, 255, 255, 75) :
-                                new Color(255, 255, 255, 32);
+                        new Color(255, 255, 255, 32);
                 g2.setColor(bg);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 24, 24);
                 g2.setColor(getModel().isPressed() ? new Color(255, 255, 255, 110) : new Color(255, 255, 255, 55));
@@ -233,23 +285,29 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         popup.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 80), 1),
                 BorderFactory.createEmptyBorder(8, 4, 8, 4)));
+
         JMenuItem basicItem = new JMenuItem(currentMode == Mode.BASIC ? " ✓ Basic" : " Basic");
         stylePopupItem(basicItem);
         basicItem.addActionListener(e -> { currentMode = Mode.BASIC; updateButtonPanel(); });
         popup.add(basicItem);
+
         JMenuItem scientificItem = new JMenuItem(currentMode == Mode.SCIENTIFIC ? " ✓ Scientific" : " Scientific");
         stylePopupItem(scientificItem);
         scientificItem.addActionListener(e -> { currentMode = Mode.SCIENTIFIC; updateButtonPanel(); });
         popup.add(scientificItem);
+
         popup.addSeparator();
+
         JMenuItem convertItem = new JMenuItem(" Convert");
         stylePopupItem(convertItem);
         convertItem.addActionListener(e -> openCurrencyConverter());
         popup.add(convertItem);
+
         JMenuItem historyItem = new JMenuItem(" History");
         stylePopupItem(historyItem);
         historyItem.addActionListener(e -> openHistoryDialog());
         popup.add(historyItem);
+
         popup.show(invoker, invoker.getWidth() - 240, invoker.getHeight() + 4);
     }
 
@@ -260,11 +318,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         item.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
     }
 
+    // ====================== ALL OTHER METHODS (Action, Parser, etc.) ======================
     @Override
     public void actionPerformed(ActionEvent e) {
         JButton source = (JButton) e.getSource();
         String cmd = source.getText();
         highlightButton(cmd);
+
         switch (cmd) {
             case "AC" -> resetCalculator();
             case "C", "⌫" -> deleteLeftOfCursor();
@@ -293,10 +353,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             case "Rand" -> insertAtCursor(formatResult(Math.random()));
             case "π" -> insertAtCursor(String.valueOf(Math.PI));
             case "Rad" -> radianMode = !radianMode;
-            case "2nd" -> {
-                inverseMode = !inverseMode;
-                updateButtonPanel();
-            }
+            case "2nd" -> { inverseMode = !inverseMode; updateButtonPanel(); }
             case "sin", "sin⁻¹" -> insertAtCursor(inverseMode ? "asin(" : "sin(");
             case "cos", "cos⁻¹" -> insertAtCursor(inverseMode ? "acos(" : "cos(");
             case "tan", "tan⁻¹" -> insertAtCursor(inverseMode ? "atan(" : "tan(");
@@ -323,30 +380,18 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
     private void insertAtCursor(String text) {
         String current = display.getText().trim();
-
         if (startNewInput) {
             boolean isPureNumber = text.equals(".") || text.equals("0.");
             if (!isPureNumber) {
-                try {
-                    Double.parseDouble(text);
-                    isPureNumber = true;
-                } catch (NumberFormatException ignored) {}
+                try { Double.parseDouble(text); isPureNumber = true; } catch (Exception ignored) {}
             }
-            if (isPureNumber) {
-                display.setText(text);
-                display.setCaretPosition(text.length());
-                startNewInput = false;
-                return;
-            }
-
-            if ("0".equals(current) && text.contains("(")) {
+            if (isPureNumber || ("0".equals(current) && text.contains("("))) {
                 display.setText(text);
                 display.setCaretPosition(text.length());
                 startNewInput = false;
                 return;
             }
         }
-
         int pos = display.getCaretPosition();
         String newText = current.substring(0, pos) + text + current.substring(pos);
         display.setText(newText);
@@ -357,59 +402,44 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     @Override
     public void keyPressed(KeyEvent e) {
         if ((e.isControlDown() || e.isMetaDown()) && e.getKeyCode() == KeyEvent.VK_A) {
-            display.selectAll();
-            e.consume();
-            return;
+            display.selectAll(); e.consume(); return;
         }
+        if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_EQUALS) {
+            handleEquals(); highlightButton("="); e.consume(); return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_BACK_SPACE) {
+            deleteLeftOfCursor(); highlightButton("C"); e.consume(); return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_DELETE || e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+            resetCalculator(); highlightButton("AC"); e.consume(); return;
+        }
+
         char ch = e.getKeyChar();
-        int key = e.getKeyCode();
-        if (key == KeyEvent.VK_ENTER || key == KeyEvent.VK_EQUALS) {
-            handleEquals();
-            highlightButton("=");
-            e.consume();
-            return;
-        }
-        if (key == KeyEvent.VK_BACK_SPACE) {
-            deleteLeftOfCursor();
-            highlightButton("C");
-            e.consume();
-            return;
-        }
-        if (key == KeyEvent.VK_DELETE || key == KeyEvent.VK_ESCAPE) {
-            resetCalculator();
-            highlightButton("AC");
-            e.consume();
-            return;
-        }
         switch (ch) {
-            case '0' -> { insertAtCursor("0"); highlightButton("0"); e.consume(); }
-            case '1' -> { insertAtCursor("1"); highlightButton("1"); e.consume(); }
-            case '2' -> { insertAtCursor("2"); highlightButton("2"); e.consume(); }
-            case '3' -> { insertAtCursor("3"); highlightButton("3"); e.consume(); }
-            case '4' -> { insertAtCursor("4"); highlightButton("4"); e.consume(); }
-            case '5' -> { insertAtCursor("5"); highlightButton("5"); e.consume(); }
-            case '6' -> { insertAtCursor("6"); highlightButton("6"); e.consume(); }
-            case '7' -> { insertAtCursor("7"); highlightButton("7"); e.consume(); }
-            case '8' -> { insertAtCursor("8"); highlightButton("8"); e.consume(); }
-            case '9' -> { insertAtCursor("9"); highlightButton("9"); e.consume(); }
-            case '.' -> { insertAtCursor("."); highlightButton("."); e.consume(); }
-            case '+' -> { insertAtCursor("+"); highlightButton("+"); e.consume(); }
-            case '-' -> { insertAtCursor("−"); highlightButton("−"); e.consume(); }
-            case '*' -> { insertAtCursor("×"); highlightButton("×"); e.consume(); }
-            case '/' -> { insertAtCursor("÷"); highlightButton("÷"); e.consume(); }
-            case '^' -> { insertAtCursor("^"); highlightButton("xʸ"); e.consume(); }
-            case '(' -> { insertAtCursor("("); highlightButton("("); e.consume(); }
-            case ')' -> { insertAtCursor(")"); highlightButton(")"); e.consume(); }
+            case '0'-> {insertAtCursor("0"); highlightButton("0"); e.consume();}
+            case '1'-> {insertAtCursor("1"); highlightButton("1"); e.consume();}
+            case '2'-> {insertAtCursor("2"); highlightButton("2"); e.consume();}
+            case '3'-> {insertAtCursor("3"); highlightButton("3"); e.consume();}
+            case '4'-> {insertAtCursor("4"); highlightButton("4"); e.consume();}
+            case '5'-> {insertAtCursor("5"); highlightButton("5"); e.consume();}
+            case '6'-> {insertAtCursor("6"); highlightButton("6"); e.consume();}
+            case '7'-> {insertAtCursor("7"); highlightButton("7"); e.consume();}
+            case '8'-> {insertAtCursor("8"); highlightButton("8"); e.consume();}
+            case '9'-> {insertAtCursor("9"); highlightButton("9"); e.consume();}
+            case '.'-> {insertAtCursor("."); highlightButton("."); e.consume();}
+            case '+'-> {insertAtCursor("+"); highlightButton("+"); e.consume();}
+            case '-'-> {insertAtCursor("−"); highlightButton("−"); e.consume();}
+            case '*'-> {insertAtCursor("×"); highlightButton("×"); e.consume();}
+            case '/'-> {insertAtCursor("÷"); highlightButton("÷"); e.consume();}
+            case '^'-> {insertAtCursor("^"); highlightButton("xʸ"); e.consume();}
+            case '('-> {insertAtCursor("("); highlightButton("("); e.consume();}
+            case ')'-> {insertAtCursor(")"); highlightButton(")"); e.consume();}
         }
-        if (currentMode == Mode.SCIENTIFIC) {
-            switch (ch) {
-                case '!' -> { handleFactorial(); highlightButton("x!"); e.consume(); }
-            }
+        if (currentMode == Mode.SCIENTIFIC && ch == '!') {
+            handleFactorial(); highlightButton("x!"); e.consume();
         }
         if (ch == '%') {
-            handlePercentage();
-            highlightButton("%");
-            e.consume();
+            handlePercentage(); highlightButton("%"); e.consume();
         }
     }
 
@@ -420,10 +450,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 ButtonModel model = btn.getModel();
                 model.setPressed(true);
                 btn.repaint();
-                Timer timer = new Timer(160, ev -> {
-                    model.setPressed(false);
-                    btn.repaint();
-                });
+                Timer timer = new Timer(160, ev -> { model.setPressed(false); btn.repaint(); });
                 timer.setRepeats(false);
                 timer.start();
                 return;
@@ -445,17 +472,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             String current = display.getText().trim();
             if (current.isEmpty()) return;
             double num = Double.parseDouble(current);
-            if (num < 0 || num != (long) num) {
-                display.setText("Error");
-                return;
-            }
+            if (num < 0 || num != (long) num) { display.setText("Error"); return; }
             long fact = 1;
             for (long i = 2; i <= (long) num; i++) fact *= i;
             display.setText(String.valueOf(fact));
             startNewInput = true;
-        } catch (Exception ex) {
-            display.setText("Error");
-        }
+        } catch (Exception ex) { display.setText("Error"); }
     }
 
     private void handleSignChange() {
@@ -474,8 +496,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             if (isRepeatPossible && startNewInput && !lastOperator.isEmpty()) {
                 double currentValue = Double.parseDouble(currentText);
                 double newResult = applyLastOperation(currentValue);
-                String formatted = formatResult(newResult);
-                display.setText(formatted);
+                display.setText(formatResult(newResult));
             } else {
                 double result = evaluateExpression(currentText);
                 String formatted = formatResult(result);
@@ -494,21 +515,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     }
 
     private void extractLastOperation(String expr) {
-        String cleaned = expr.replace(" ", "")
-                .replace("×", "*")
-                .replace("÷", "/")
-                .replace("−", "-")
-                .replace("xʸ", "^");
+        String cleaned = expr.replace(" ", "").replace("×","*").replace("÷","/").replace("−","-").replace("xʸ","^");
         lastOperator = "";
         lastOperand = 0.0;
         int lastOpIndex = -1;
-        char lastOpChar = 0;
         for (int i = cleaned.length() - 1; i >= 0; i--) {
             char c = cleaned.charAt(i);
-            if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') &&
-                    i > 0 && i < cleaned.length() - 1) {
+            if ((c == '+' || c == '-' || c == '*' || c == '/' || c == '^') && i > 0 && i < cleaned.length() - 1) {
                 lastOpIndex = i;
-                lastOpChar = c;
                 break;
             }
         }
@@ -517,14 +531,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         int numEnd = 0;
         while (numEnd < rightPart.length()) {
             char ch = rightPart.charAt(numEnd);
-            if (Character.isDigit(ch) || ch == '.' || (numEnd == 0 && ch == '-')) {
-                numEnd++;
-            } else break;
+            if (Character.isDigit(ch) || ch == '.' || (numEnd == 0 && ch == '-')) numEnd++;
+            else break;
         }
         if (numEnd > 0) {
             try {
                 lastOperand = Double.parseDouble(rightPart.substring(0, numEnd));
-                lastOperator = String.valueOf(lastOpChar);
+                lastOperator = String.valueOf(cleaned.charAt(lastOpIndex));
             } catch (Exception ignored) {}
         }
     }
@@ -536,7 +549,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             case "*" -> left * lastOperand;
             case "/" -> (lastOperand == 0) ? 0 : left / lastOperand;
             case "^" -> Math.pow(left, lastOperand);
-            default -> throw new Exception("No operation to repeat");
+            default -> throw new Exception("No operation");
         };
     }
 
@@ -582,11 +595,8 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     double next = parseFactor();
                     value = (op == '*' || op == '×') ? value * next : (next == 0 ? 0 : value / next);
                 } else if (isStartOfFactor()) {
-                    double next = parseFactor();
-                    value *= next;
-                } else {
-                    break;
-                }
+                    value *= parseFactor();
+                } else break;
             }
             return value;
         }
@@ -596,78 +606,61 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             char c = input.charAt(pos);
             if (Character.isDigit(c) || c == '.' || c == '(' || c == '√' || c == 'π') return true;
             if (c == 'e' && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos + 1)))) return true;
-            String remaining = input.substring(pos);
-            return remaining.startsWith("sin(") || remaining.startsWith("cos(") ||
-                    remaining.startsWith("tan(") || remaining.startsWith("asin(") ||
-                    remaining.startsWith("acos(") || remaining.startsWith("atan(") ||
-                    remaining.startsWith("log(") || remaining.startsWith("ln(") ||
-                    remaining.startsWith("cbrt(") ||
-                    remaining.startsWith("sinh(") || remaining.startsWith("cosh(") || remaining.startsWith("tanh(") ||
-                    remaining.startsWith("asinh(") || remaining.startsWith("acosh(") || remaining.startsWith("atanh(") ||
-                    remaining.startsWith("log2(");
+            String s = input.substring(pos);
+            return s.startsWith("sin(") || s.startsWith("cos(") || s.startsWith("tan(") ||
+                   s.startsWith("asin(") || s.startsWith("acos(") || s.startsWith("atan(") ||
+                   s.startsWith("log(") || s.startsWith("ln(") || s.startsWith("cbrt(") ||
+                   s.startsWith("sinh(") || s.startsWith("cosh(") || s.startsWith("tanh(") ||
+                   s.startsWith("asinh(") || s.startsWith("acosh(") || s.startsWith("atanh(") ||
+                   s.startsWith("log2(");
         }
 
         private double parseFactor() throws Exception {
             double value = parsePrimary();
-            while (pos < input.length()) {
-                char op = input.charAt(pos);
-                if (op == '^') {
-                    pos++;
-                    double exp = parseFactor();
-                    value = Math.pow(value, exp);
-                } else break;
+            
+            while (pos < input.length() && input.charAt(pos) == '^') {
+                pos++;
+                value = Math.pow(value, parseFactor());
             }
             return value;
         }
+        
 
         private double parsePrimary() throws Exception {
             if (pos >= input.length()) throw new Exception("Unexpected end");
             char c = input.charAt(pos);
+            if (c == '-') {
+    pos++;
+    return -parsePrimary();
+}
             if (Character.isDigit(c) || c == '.') return parseNumber();
             if (c == '(') {
                 pos++;
                 double value = parseExpression();
-                // Auto-close any missing closing parenthesis (fixes sin(45  → sin(45))
-                if (pos < input.length() && input.charAt(pos) == ')') {
-                    pos++;
-                }
-                // else: silently accept missing ) at end of input
+                if (pos < input.length() && input.charAt(pos) == ')') pos++;
                 return value;
             }
-            if (c == 's' && input.startsWith("sin(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')');
-                double arg = radianMode ? v : Math.toRadians(v);
-                return Math.sin(arg);
-            }
-            if (c == 'c' && input.startsWith("cos(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')');
-                double arg = radianMode ? v : Math.toRadians(v);
-                return Math.cos(arg);
-            }
-            if (c == 't' && input.startsWith("tan(", pos)) {
-                pos += 4; double v = parseExpression(); expect(')');
-                double arg = radianMode ? v : Math.toRadians(v);
-                return Math.tan(arg);
-            }
+            if (c == 's' && input.startsWith("sin(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.sin(radianMode ? v : Math.toRadians(v)); }
+            if (c == 'c' && input.startsWith("cos(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.cos(radianMode ? v : Math.toRadians(v)); }
+            if (c == 't' && input.startsWith("tan(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.tan(radianMode ? v : Math.toRadians(v)); }
             if (c == 'a' && input.startsWith("asin(", pos)) { pos += 5; double v = parseExpression(); expect(')'); double res = Math.asin(v); return radianMode ? res : Math.toDegrees(res); }
             if (c == 'a' && input.startsWith("acos(", pos)) { pos += 5; double v = parseExpression(); expect(')'); double res = Math.acos(v); return radianMode ? res : Math.toDegrees(res); }
             if (c == 'a' && input.startsWith("atan(", pos)) { pos += 5; double v = parseExpression(); expect(')'); double res = Math.atan(v); return radianMode ? res : Math.toDegrees(res); }
             if (c == 'l' && input.startsWith("log(", pos)) { pos += 4; double v = parseExpression(); expect(')'); return Math.log10(v); }
             if (c == 'l' && input.startsWith("ln(", pos)) { pos += 3; double v = parseExpression(); expect(')'); return Math.log(v); }
-            if (input.startsWith("log2(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.log(v) / Math.log(2); }
+            if (input.startsWith("log2(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.log(v)/Math.log(2); }
             if (c == '√' && input.startsWith("√(", pos)) { pos += 2; double v = parseExpression(); expect(')'); return Math.sqrt(v); }
             if (input.startsWith("cbrt(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.cbrt(v); }
             if (input.startsWith("sinh(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.sinh(v); }
             if (input.startsWith("cosh(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.cosh(v); }
             if (input.startsWith("tanh(", pos)) { pos += 5; double v = parseExpression(); expect(')'); return Math.tanh(v); }
-            if (input.startsWith("asinh(", pos)) { pos += 6; double v = parseExpression(); expect(')'); return Math.log(v + Math.sqrt(v * v + 1)); }
-            if (input.startsWith("acosh(", pos)) { pos += 6; double v = parseExpression(); expect(')'); return Math.log(v + Math.sqrt(v * v - 1)); }
+            if (input.startsWith("asinh(", pos)) { pos += 6; double v = parseExpression(); expect(')'); return Math.log(v + Math.sqrt(v*v + 1)); }
+            if (input.startsWith("acosh(", pos)) { pos += 6; double v = parseExpression(); expect(')'); return Math.log(v + Math.sqrt(v*v - 1)); }
             if (input.startsWith("atanh(", pos)) { pos += 6; double v = parseExpression(); expect(')'); return Math.abs(v) >= 1 ? Double.NaN : 0.5 * Math.log((1 + v) / (1 - v)); }
             if (input.startsWith("π", pos)) { pos += 1; return Math.PI; }
-            if (input.startsWith("e", pos) && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos + 1)))) {
-                pos += 1; return Math.E;
-            }
-            throw new Exception("Unknown token at " + pos);
+            if (input.startsWith("e", pos) && (pos + 1 >= input.length() || !Character.isLetter(input.charAt(pos + 1)))) { pos += 1; return Math.E; }
+
+            throw new Exception("Unknown token");
         }
 
         private double parseNumber() {
@@ -682,28 +675,22 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
 
         private void expect(char ch) throws Exception {
-            if (pos < input.length() && input.charAt(pos) == ch) {
-                pos++;
-            } else if (pos >= input.length()) {
-                // Silently accept missing closing parenthesis at the very end of input.
-                // This is the key fix for sin(45   → automatically becomes sin(45) on "="
-            } else {
-                throw new Exception("Expected " + ch);
-            }
+            if (pos < input.length() && input.charAt(pos) == ch) pos++;
+            // else accept missing ) at end
         }
     }
 
     private String formatResult(double result) {
         if (Double.isNaN(result) || Double.isInfinite(result)) return "Error";
         if (Math.abs(result) < 1e-10) return "0";
-        double absResult = Math.abs(result);
-        if (absResult >= 1e10 || (absResult > 0 && absResult < 1e-6)) {
-            String sci = String.format("%.8g", result);
-            return sci.replace('e', 'E');
+        double abs = Math.abs(result);
+        if (abs >= 1e10 || (abs > 0 && abs < 1e-6)) {
+            String s = String.format("%.8g", result);
+            return s.replace('e', 'E');
         }
         if (result == (long) result) return String.valueOf((long) result);
-        String formatted = String.format("%.8f", result);
-        return formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
+        String s = String.format("%.8f", result);
+        return s.replaceAll("0+$", "").replaceAll("\\.$", "");
     }
 
     private void resetCalculator() {
@@ -720,25 +707,19 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         int count = prefs.getInt("historyCount", 0);
         for (int i = 0; i < count; i++) {
             String entry = prefs.get("history_" + i, null);
-            if (entry != null && !entry.trim().isEmpty()) {
-                history.add(entry);
-            }
+            if (entry != null && !entry.trim().isEmpty()) history.add(entry);
         }
     }
 
     private void saveHistory() {
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
-        int oldCount = prefs.getInt("historyCount", 0);
+        int old = prefs.getInt("historyCount", 0);
         prefs.putInt("historyCount", history.size());
-        for (int i = 0; i < history.size(); i++) {
-            prefs.put("history_" + i, history.get(i));
-        }
-        for (int i = history.size(); i < oldCount + 20; i++) {
-            prefs.remove("history_" + i);
-        }
+        for (int i = 0; i < history.size(); i++) prefs.put("history_" + i, history.get(i));
+        for (int i = history.size(); i < old + 20; i++) prefs.remove("history_" + i);
     }
 
-    // ====================== FULLY RESTORED CURRENCY CONVERTER ======================
+    // ====================== FULL CURRENCY CONVERTER ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
         dialog.setSize(440, 740);
@@ -799,13 +780,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         displayArea.add(swapPanel);
         displayArea.add(inputLine);
         displayArea.add(statusPanel);
-
         dialog.add(displayArea, BorderLayout.NORTH);
 
         JPanel keypad = new JPanel();
         keypad.setBackground(new Color(20, 20, 25));
         keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
         keypad.setLayout(new GridLayout(5, 4, 12, 12));
+
         String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−",
                 "1", "2", "3", "+", "+/-", "0", ".", "="};
 
@@ -825,13 +806,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 } catch (Exception ex) {
                     amount = Double.parseDouble(inputStr);
                 }
+
                 String from = (String) fromBox.getSelectedItem();
                 String to = (String) toBox.getSelectedItem();
                 if (from.equals(to)) {
                     resultLabel.setText(formatResult(amount));
-                    statusLabel.setText("Live rates • Ready");
                     return;
                 }
+
                 CachedRates cached = rateCache.get(from);
                 if (cached != null && !cached.isExpired()) {
                     double rate = cached.rates.getOrDefault(to, 0.0);
@@ -839,8 +821,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     statusLabel.setText("Last updated: " + cached.lastUpdatedUtc);
                     return;
                 }
-                resultLabel.setText("Fetching live rates...");
+
+                resultLabel.setText("Fetching...");
                 statusLabel.setText("Connecting to API...");
+
                 new SwingWorker<Void, Void>() {
                     @Override
                     protected Void doInBackground() {
@@ -851,12 +835,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                             conn.setRequestMethod("GET");
                             conn.setConnectTimeout(8000);
                             conn.setReadTimeout(8000);
+
                             StringBuilder content = new StringBuilder();
                             try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                                 String line;
                                 while ((line = in.readLine()) != null) content.append(line);
                             }
                             conn.disconnect();
+
                             String jsonStr = content.toString();
                             Map<String, Double> rates = new HashMap<>();
                             int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
@@ -876,15 +862,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                                     }
                                 }
                             }
+
                             String lastUpdatedUtc = "Unknown";
                             int keyIndex = jsonStr.indexOf("\"time_last_update_utc\":\"");
                             if (keyIndex != -1) {
                                 int valueStart = keyIndex + "\"time_last_update_utc\":\"".length();
                                 int valueEnd = jsonStr.indexOf("\"", valueStart);
-                                if (valueEnd != -1) {
-                                    lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
-                                }
+                                if (valueEnd != -1) lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
                             }
+
                             rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
                         } catch (Exception ignored) {}
                         return null;
@@ -911,6 +897,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             resultLabel.setText(temp);
             liveUpdate.run();
         });
+
         fromBox.addActionListener(e -> liveUpdate.run());
         toBox.addActionListener(e -> liveUpdate.run());
 
@@ -987,8 +974,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color bg = new Color(30, 30, 35);
-                if (isPopupVisible()) bg = new Color(45, 45, 52);
+                Color bg = isPopupVisible() ? new Color(45, 45, 52) : new Color(30, 30, 35);
                 g2.setColor(bg);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 18, 18);
                 g2.setColor(new Color(255, 255, 255, 35));
@@ -1004,15 +990,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         combo.setFocusable(false);
         combo.setCursor(new Cursor(Cursor.HAND_CURSOR));
         combo.setPreferredSize(new Dimension(160, 62));
+
         combo.setRenderer(new DefaultListCellRenderer() {
             @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value,
-                                                          int index, boolean isSelected, boolean cellHasFocus) {
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
                 JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 label.setFont(new Font("Segoe UI", Font.PLAIN, 22));
                 label.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
                 label.setHorizontalAlignment(SwingConstants.LEFT);
-                label.setText(value != null ? value.toString() : "");
                 if (isSelected) {
                     label.setBackground(new Color(80, 200, 255));
                     label.setForeground(new Color(20, 20, 25));
@@ -1023,20 +1008,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 return label;
             }
         });
-        combo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
-            @Override
-            public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
-                JComboBox<?> cb = (JComboBox<?>) e.getSource();
-                Object child = cb.getAccessibleContext().getAccessibleChild(0);
-                if (child instanceof JPopupMenu popup) {
-                    popup.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 85), 1));
-                    popup.setBackground(new Color(28, 28, 34));
-                    popup.setPreferredSize(new Dimension(Math.max(cb.getWidth(), 180), popup.getPreferredSize().height));
-                }
-            }
-            @Override public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
-            @Override public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {}
-        });
+
         return combo;
     }
 
@@ -1059,30 +1031,35 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         historyArea.setBackground(new Color(30, 30, 35));
         historyArea.setForeground(Color.WHITE);
         historyArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
         if (history.isEmpty()) {
-            historyArea.setText("No calculations performed yet.\n\nPress = on any calculation to add it here.");
+            historyArea.setText("No calculations performed yet.\n\nPress = to add to history.");
         } else {
             StringBuilder sb = new StringBuilder();
             for (String entry : history) sb.append(entry).append("\n\n");
             historyArea.setText(sb.toString().trim());
         }
+
         JScrollPane scrollPane = new JScrollPane(historyArea);
         dialog.add(scrollPane, BorderLayout.CENTER);
 
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
         btnPanel.setBackground(new Color(20, 20, 25));
+
         JButton clearBtn = new JButton("Clear History");
         clearBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         clearBtn.setBackground(new Color(220, 50, 50));
         clearBtn.setForeground(Color.WHITE);
         clearBtn.setFocusPainted(false);
         clearBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
+
         JButton closeBtn = new JButton("Close");
         closeBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         closeBtn.setBackground(new Color(80, 200, 255));
         closeBtn.setForeground(Color.WHITE);
         closeBtn.setFocusPainted(false);
         closeBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
+
         btnPanel.add(clearBtn);
         btnPanel.add(closeBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
