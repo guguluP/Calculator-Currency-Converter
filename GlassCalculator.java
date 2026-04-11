@@ -15,9 +15,14 @@ import java.util.List;
  * GlassCalculator - Final Project Version (FIXED)
  * ALL ERRORS FIXED:
  * 1. Lambda variable capture in currency keypad (all buttons now work independently).
- * 2. insertAtCursor() now correctly replaces display for digits, ".", π, e, Rand, mr after = (non-zero results).
- * 3. ExpressionParser now fully supports Unicode operators (× ÷ −) from buttons and keyboard.
- * All other functionality (2nd mode, memory, history, live currency, repeat =, hyperbolics, etc.) preserved and working.
+ * 2. insertAtCursor() now correctly replaces display for digits, ".", π, e, Rand after =.
+ * 3. ExpressionParser fully supports Unicode operators (× ÷ −).
+ * 4. Trigonometric / function buttons (sin, asin, √, log, etc.) no longer produce "0sin(".
+ * 5. NEW: Full () support with auto-closing missing parentheses.
+ *    - sin(45)  → works (≈0.707 in degrees)
+ *    - sin(45   → now automatically treated as sin(45) on "=" (no more Error)
+ *    - Nested: sin(cos(30   → also auto-closes all missing )
+ *    - Still strict error on truly invalid expressions (sin(45+ or extra chars)
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
     private JTextField display;
@@ -318,6 +323,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
     private void insertAtCursor(String text) {
         String current = display.getText().trim();
+
         if (startNewInput) {
             boolean isPureNumber = text.equals(".") || text.equals("0.");
             if (!isPureNumber) {
@@ -332,7 +338,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 startNewInput = false;
                 return;
             }
+
+            if ("0".equals(current) && text.contains("(")) {
+                display.setText(text);
+                display.setCaretPosition(text.length());
+                startNewInput = false;
+                return;
+            }
         }
+
         int pos = display.getCaretPosition();
         String newText = current.substring(0, pos) + text + current.substring(pos);
         display.setText(newText);
@@ -613,8 +627,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             if (c == '(') {
                 pos++;
                 double value = parseExpression();
-                if (pos < input.length() && input.charAt(pos) == ')') pos++;
-                else throw new Exception("Missing )");
+                // Auto-close any missing closing parenthesis (fixes sin(45  → sin(45))
+                if (pos < input.length() && input.charAt(pos) == ')') {
+                    pos++;
+                }
+                // else: silently accept missing ) at end of input
                 return value;
             }
             if (c == 's' && input.startsWith("sin(", pos)) {
@@ -665,8 +682,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
 
         private void expect(char ch) throws Exception {
-            if (pos < input.length() && input.charAt(pos) == ch) pos++;
-            else throw new Exception("Expected " + ch);
+            if (pos < input.length() && input.charAt(pos) == ch) {
+                pos++;
+            } else if (pos >= input.length()) {
+                // Silently accept missing closing parenthesis at the very end of input.
+                // This is the key fix for sin(45   → automatically becomes sin(45) on "="
+            } else {
+                throw new Exception("Expected " + ch);
+            }
         }
     }
 
@@ -715,7 +738,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         }
     }
 
-    // ====================== FULLY RESTORED CURRENCY CONVERTER (no unused code) ======================
+    // ====================== FULLY RESTORED CURRENCY CONVERTER ======================
     private void openCurrencyConverter() {
         JDialog dialog = new JDialog(this, "Live Currency Converter", true);
         dialog.setSize(440, 740);
