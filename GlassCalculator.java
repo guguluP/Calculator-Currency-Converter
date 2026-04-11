@@ -721,252 +721,336 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
     // ====================== FULL CURRENCY CONVERTER ======================
     private void openCurrencyConverter() {
-        JDialog dialog = new JDialog(this, "Live Currency Converter", true);
-        dialog.setSize(440, 740);
-        dialog.setLocationRelativeTo(this);
-        dialog.setLayout(new BorderLayout(0, 0));
-        dialog.getContentPane().setBackground(new Color(20, 20, 25));
+    JDialog dialog = new JDialog(this, "Live Currency Converter", true);
+    dialog.setSize(440, 740);
+    dialog.setLocationRelativeTo(this);
+    dialog.setLayout(new BorderLayout(0, 0));
+    dialog.getContentPane().setBackground(new Color(20, 20, 25));
 
-        JPanel displayArea = new JPanel();
-        displayArea.setLayout(new BoxLayout(displayArea, BoxLayout.Y_AXIS));
-        displayArea.setBackground(new Color(20, 20, 25));
-        displayArea.setBorder(BorderFactory.createEmptyBorder(30, 20, 20, 20));
+    JPanel displayArea = new JPanel();
+    displayArea.setLayout(new BoxLayout(displayArea, BoxLayout.Y_AXIS));
+    displayArea.setBackground(new Color(20, 20, 25));
+    displayArea.setBorder(BorderFactory.createEmptyBorder(30, 20, 20, 20));
 
-        JPanel resultLine = new JPanel(new BorderLayout(0, 0));
-        resultLine.setBackground(new Color(20, 20, 25));
-        resultLine.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
-        JLabel resultLabel = new JLabel("0", SwingConstants.RIGHT);
-        resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 54));
-        resultLabel.setForeground(Color.WHITE);
-        JComboBox<String> toBox = createStyledCurrencyComboBox(currencies);
-        toBox.setSelectedItem("INR");
-        toBox.setPreferredSize(new Dimension(145, 62));
-        resultLine.add(resultLabel, BorderLayout.CENTER);
-        resultLine.add(toBox, BorderLayout.EAST);
+    // Result Line (To)
+    JPanel resultLine = new JPanel(new BorderLayout(0, 0));
+    resultLine.setBackground(new Color(20, 20, 25));
+    resultLine.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+    JLabel resultLabel = new JLabel("0", SwingConstants.RIGHT);
+    resultLabel.setFont(new Font("Segoe UI", Font.PLAIN, 54));
+    resultLabel.setForeground(Color.WHITE);
+    JComboBox<String> toBox = createStyledCurrencyComboBox(currencies);
+    toBox.setSelectedItem("INR");
+    toBox.setPreferredSize(new Dimension(145, 62));
+    resultLine.add(resultLabel, BorderLayout.CENTER);
+    resultLine.add(toBox, BorderLayout.EAST);
 
-        JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 8));
-        swapPanel.setBackground(new Color(20, 20, 25));
-        JButton swapBtn = createGlassButton("↕");
-        swapBtn.setFont(new Font("Segoe UI", Font.BOLD, 36));
-        swapBtn.setForeground(new Color(255, 165, 0));
-        swapBtn.setPreferredSize(new Dimension(68, 68));
-        swapPanel.add(swapBtn);
+    // Swap Button
+    JPanel swapPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 8));
+    swapPanel.setBackground(new Color(20, 20, 25));
+    JButton swapBtn = createGlassButton("↕");
+    swapBtn.setFont(new Font("Segoe UI", Font.BOLD, 36));
+    swapBtn.setForeground(new Color(255, 165, 0));
+    swapBtn.setPreferredSize(new Dimension(68, 68));
+    swapPanel.add(swapBtn);
 
-        JPanel inputLine = new JPanel(new BorderLayout(0, 0));
-        inputLine.setBackground(new Color(20, 20, 25));
-        inputLine.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        JTextField inputField = new JTextField("0");
-        inputField.setHorizontalAlignment(JTextField.RIGHT);
-        inputField.setFont(new Font("Segoe UI", Font.PLAIN, 54));
-        inputField.setBackground(new Color(30, 30, 35));
-        inputField.setForeground(Color.WHITE);
-        inputField.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
-        inputField.setEditable(false);
-        inputField.setCaretColor(new Color(80, 200, 255));
-        JComboBox<String> fromBox = createStyledCurrencyComboBox(currencies);
-        fromBox.setSelectedItem("USD");
-        fromBox.setPreferredSize(new Dimension(145, 62));
-        inputLine.add(inputField, BorderLayout.CENTER);
-        inputLine.add(fromBox, BorderLayout.EAST);
+    // Input Line (From)
+    JPanel inputLine = new JPanel(new BorderLayout(0, 0));
+    inputLine.setBackground(new Color(20, 20, 25));
+    inputLine.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+    JTextField inputField = new JTextField("0");
+    inputField.setHorizontalAlignment(JTextField.RIGHT);
+    inputField.setFont(new Font("Segoe UI", Font.PLAIN, 54));
+    inputField.setBackground(new Color(30, 30, 35));
+    inputField.setForeground(Color.WHITE);
+    inputField.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
+    inputField.setCaretColor(new Color(80, 200, 255));
+    JComboBox<String> fromBox = createStyledCurrencyComboBox(currencies);
+    fromBox.setSelectedItem("USD");
+    fromBox.setPreferredSize(new Dimension(145, 62));
+    inputLine.add(inputField, BorderLayout.CENTER);
+    inputLine.add(fromBox, BorderLayout.EAST);
 
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        statusPanel.setBackground(new Color(20, 20, 25));
-        JLabel statusLabel = new JLabel("Live rates • Ready");
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        statusLabel.setForeground(new Color(120, 220, 120));
-        statusPanel.add(statusLabel);
+    JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+    statusPanel.setBackground(new Color(20, 20, 25));
+    JLabel statusLabel = new JLabel("Live rates • Ready");
+    statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+    statusLabel.setForeground(new Color(120, 220, 120));
+    statusPanel.add(statusLabel);
 
-        displayArea.add(resultLine);
-        displayArea.add(swapPanel);
-        displayArea.add(inputLine);
-        displayArea.add(statusPanel);
-        dialog.add(displayArea, BorderLayout.NORTH);
+    displayArea.add(resultLine);
+    displayArea.add(swapPanel);
+    displayArea.add(inputLine);
+    displayArea.add(statusPanel);
+    dialog.add(displayArea, BorderLayout.NORTH);
 
-        JPanel keypad = new JPanel();
-        keypad.setBackground(new Color(20, 20, 25));
-        keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
-        keypad.setLayout(new GridLayout(5, 4, 12, 12));
+    // Keypad
+    JPanel keypad = new JPanel();
+    keypad.setBackground(new Color(20, 20, 25));
+    keypad.setBorder(BorderFactory.createEmptyBorder(10, 20, 30, 20));
+    keypad.setLayout(new GridLayout(5, 4, 12, 12));
 
-        String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−",
-                "1", "2", "3", "+", "+/-", "0", ".", "="};
+    String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−",
+                     "1", "2", "3", "+", "+/-", "0", ".", "="};
 
-        final Runnable[] liveUpdateHolder = new Runnable[1];
-        Runnable liveUpdate = () -> {
-            try {
-                String inputStr = inputField.getText().trim().replace(" ", "");
-                if (inputStr.isEmpty() || inputStr.equals("0")) {
-                    resultLabel.setText("0");
-                    statusLabel.setText("Live rates • Ready");
-                    return;
-                }
-                double amount;
-                try {
-                    String cleaned = inputStr.replace("÷", "/").replace("×", "*").replace("−", "-");
-                    amount = new ExpressionParser(cleaned, false).parse();
-                } catch (Exception ex) {
-                    amount = Double.parseDouble(inputStr);
-                }
+    final Runnable[] liveUpdateHolder = new Runnable[1];
 
-                String from = (String) fromBox.getSelectedItem();
-                String to = (String) toBox.getSelectedItem();
-                if (from.equals(to)) {
-                    resultLabel.setText(formatResult(amount));
-                    return;
-                }
-
-                CachedRates cached = rateCache.get(from);
-                if (cached != null && !cached.isExpired()) {
-                    double rate = cached.rates.getOrDefault(to, 0.0);
-                    resultLabel.setText(formatResult(amount * rate));
-                    statusLabel.setText("Last updated: " + cached.lastUpdatedUtc);
-                    return;
-                }
-
-                resultLabel.setText("Fetching...");
-                statusLabel.setText("Connecting to API...");
-
-                new SwingWorker<Void, Void>() {
-                    @Override
-                    protected Void doInBackground() {
-                        try {
-                            String urlStr = "https://v6.exchangerate-api.com/v6/" + API_KEY + "/latest/" + from;
-                            URL url = new URL(urlStr);
-                            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                            conn.setRequestMethod("GET");
-                            conn.setConnectTimeout(8000);
-                            conn.setReadTimeout(8000);
-
-                            StringBuilder content = new StringBuilder();
-                            try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                                String line;
-                                while ((line = in.readLine()) != null) content.append(line);
-                            }
-                            conn.disconnect();
-
-                            String jsonStr = content.toString();
-                            Map<String, Double> rates = new HashMap<>();
-                            int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
-                            if (ratesStart != -1) {
-                                int openBrace = jsonStr.indexOf('{', ratesStart);
-                                int closeBrace = jsonStr.indexOf('}', openBrace);
-                                String ratesSection = jsonStr.substring(openBrace + 1, closeBrace);
-                                for (String pair : ratesSection.split(",")) {
-                                    pair = pair.trim();
-                                    if (pair.isEmpty()) continue;
-                                    String[] kv = pair.split(":", 2);
-                                    if (kv.length == 2) {
-                                        String currency = kv[0].replace("\"", "").trim();
-                                        try {
-                                            rates.put(currency, Double.parseDouble(kv[1].trim()));
-                                        } catch (Exception ignored) {}
-                                    }
-                                }
-                            }
-
-                            String lastUpdatedUtc = "Unknown";
-                            int keyIndex = jsonStr.indexOf("\"time_last_update_utc\":\"");
-                            if (keyIndex != -1) {
-                                int valueStart = keyIndex + "\"time_last_update_utc\":\"".length();
-                                int valueEnd = jsonStr.indexOf("\"", valueStart);
-                                if (valueEnd != -1) lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
-                            }
-
-                            rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
-                        } catch (Exception ignored) {}
-                        return null;
-                    }
-
-                    @Override
-                    protected void done() {
-                        SwingUtilities.invokeLater(liveUpdateHolder[0]);
-                    }
-                }.execute();
-            } catch (Exception ignored) {
-                resultLabel.setText("Error");
+    Runnable liveUpdate = () -> {
+        try {
+            String inputStr = inputField.getText().trim().replace(" ", "");
+            if (inputStr.isEmpty() || inputStr.equals("0")) {
+                resultLabel.setText("0");
+                statusLabel.setText("Live rates • Ready");
+                return;
             }
-        };
-        liveUpdateHolder[0] = liveUpdate;
 
-        swapBtn.addActionListener(e -> {
+            double amount;
+            try {
+                String cleaned = inputStr.replace("÷", "/").replace("×", "*").replace("−", "-");
+                amount = new ExpressionParser(cleaned, false).parse();
+            } catch (Exception ex) {
+                amount = Double.parseDouble(inputStr);
+            }
+
             String from = (String) fromBox.getSelectedItem();
             String to = (String) toBox.getSelectedItem();
-            fromBox.setSelectedItem(to);
-            toBox.setSelectedItem(from);
-            String temp = inputField.getText();
-            inputField.setText(resultLabel.getText());
-            resultLabel.setText(temp);
-            liveUpdate.run();
-        });
 
-        fromBox.addActionListener(e -> liveUpdate.run());
-        toBox.addActionListener(e -> liveUpdate.run());
+            if (from.equals(to)) {
+                resultLabel.setText(formatResult(amount));
+                return;
+            }
 
-        for (String text : keys) {
-            JButton btn = createGlassButton(text);
-            final String cmd = text;
-            btn.addActionListener(ev -> {
-                if (cmd.equals("⌫")) {
-                    String txt = inputField.getText();
+            // Use cache if available and not expired
+            CachedRates cached = rateCache.get(from);
+            if (cached != null && !cached.isExpired()) {
+                double rate = cached.rates.getOrDefault(to, 0.0);
+                resultLabel.setText(formatResult(amount * rate));
+                statusLabel.setText("Last updated: " + cached.lastUpdatedUtc);
+                return;
+            }
+
+            resultLabel.setText("Fetching...");
+            statusLabel.setText("Connecting to API...");
+
+            new SwingWorker<Void, Void>() {
+                @Override
+                protected Void doInBackground() {
+                    try {
+                        String urlStr = "https://v6.exchangerate-api.com/v6/" + API_KEY + "/latest/" + from;
+                        URL url = new URL(urlStr);
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("GET");
+                        conn.setConnectTimeout(8000);
+                        conn.setReadTimeout(8000);
+
+                        StringBuilder content = new StringBuilder();
+                        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                            String line;
+                            while ((line = in.readLine()) != null) content.append(line);
+                        }
+                        conn.disconnect();
+
+                        String jsonStr = content.toString();
+                        Map<String, Double> rates = new HashMap<>();
+                        int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
+                        if (ratesStart != -1) {
+                            int openBrace = jsonStr.indexOf('{', ratesStart);
+                            int closeBrace = jsonStr.indexOf('}', openBrace);
+                            String ratesSection = jsonStr.substring(openBrace + 1, closeBrace);
+                            for (String pair : ratesSection.split(",")) {
+                                pair = pair.trim();
+                                if (pair.isEmpty()) continue;
+                                String[] kv = pair.split(":", 2);
+                                if (kv.length == 2) {
+                                    String currency = kv[0].replace("\"", "").trim();
+                                    try {
+                                        rates.put(currency, Double.parseDouble(kv[1].trim()));
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+
+                        String lastUpdatedUtc = "Unknown";
+                        int keyIndex = jsonStr.indexOf("\"time_last_update_utc\":\"");
+                        if (keyIndex != -1) {
+                            int valueStart = keyIndex + "\"time_last_update_utc\":\"".length();
+                            int valueEnd = jsonStr.indexOf("\"", valueStart);
+                            if (valueEnd != -1) lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
+                        }
+
+                        rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
+                    } catch (Exception ignored) {}
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    SwingUtilities.invokeLater(liveUpdateHolder[0]);
+                }
+            }.execute();
+
+        } catch (Exception ignored) {
+            resultLabel.setText("Error");
+        }
+    };
+
+    liveUpdateHolder[0] = liveUpdate;
+
+    // === KEYBOARD FUNCTIONALITY ===
+    KeyAdapter currencyKeyListener = new KeyAdapter() {
+        @Override
+        public void keyPressed(KeyEvent e) {
+            String txt = inputField.getText();
+
+            switch (e.getKeyCode()) {
+                case KeyEvent.VK_ENTER:
+                case KeyEvent.VK_EQUALS:
+                    liveUpdate.run();
+                    e.consume();
+                    break;
+
+                case KeyEvent.VK_BACK_SPACE:
+                    if (txt.length() > 0) {
+                        txt = txt.substring(0, txt.length() - 1);
+                        inputField.setText(txt.isEmpty() ? "0" : txt);
+                        liveUpdate.run();
+                    }
+                    e.consume();
+                    break;
+
+                case KeyEvent.VK_ESCAPE:
+                    dialog.dispose();
+                    e.consume();
+                    break;
+
+                case KeyEvent.VK_DELETE:
+                    inputField.setText("0");
+                    liveUpdate.run();
+                    e.consume();
+                    break;
+            }
+
+            char ch = e.getKeyChar();
+            if (Character.isDigit(ch)) {
+                inputField.setText(txt.equals("0") ? String.valueOf(ch) : txt + ch);
+                liveUpdate.run();
+                e.consume();
+            } 
+            else if (ch == '.') {
+                if (!txt.contains(".")) {
+                    inputField.setText(txt.equals("0") ? "0." : txt + ".");
+                    liveUpdate.run();
+                }
+                e.consume();
+            } 
+            else if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
+                String op = switch (ch) {
+                    case '+' -> "+";
+                    case '-' -> "−";
+                    case '*' -> "×";
+                    case '/' -> "÷";
+                    default -> "";
+                };
+                inputField.setText(txt + op);
+                liveUpdate.run();
+                e.consume();
+            } 
+            else if (ch == '%') {
+                try {
+                    String cleaned = txt.replace("÷","/").replace("×","*").replace("−","-");
+                    double v = new ExpressionParser(cleaned, false).parse();
+                    inputField.setText(formatResult(v / 100));
+                    liveUpdate.run();
+                } catch (Exception ignored) {}
+                e.consume();
+            }
+        }
+    };
+
+    // Add keyboard listener to dialog and input field
+    dialog.addKeyListener(currencyKeyListener);
+    inputField.addKeyListener(currencyKeyListener);
+
+    // Swap Button Action
+    swapBtn.addActionListener(e -> {
+        String from = (String) fromBox.getSelectedItem();
+        String to = (String) toBox.getSelectedItem();
+        fromBox.setSelectedItem(to);
+        toBox.setSelectedItem(from);
+        String temp = inputField.getText();
+        inputField.setText(resultLabel.getText());
+        resultLabel.setText(temp);
+        liveUpdate.run();
+    });
+
+    fromBox.addActionListener(e -> liveUpdate.run());
+    toBox.addActionListener(e -> liveUpdate.run());
+
+    // Keypad Buttons
+    for (String text : keys) {
+        JButton btn = createGlassButton(text);
+        final String cmd = text;
+
+        btn.addActionListener(ev -> {
+            String txt = inputField.getText();
+
+            switch (cmd) {
+                case "⌫" -> {
                     if (txt.length() > 0) {
                         txt = txt.substring(0, txt.length() - 1);
                         inputField.setText(txt.isEmpty() ? "0" : txt);
                     }
-                } else if (cmd.equals("AC")) {
-                    inputField.setText("0");
-                } else if (cmd.equals("%")) {
+                }
+                case "AC" -> inputField.setText("0");
+                case "%" -> {
                     try {
-                        String txt = inputField.getText().trim().replace(" ", "");
                         String cleaned = txt.replace("÷","/").replace("×","*").replace("−","-");
                         double v = new ExpressionParser(cleaned, false).parse();
                         inputField.setText(formatResult(v / 100));
                     } catch (Exception ignored) {}
-                } else if (cmd.equals("+/-")) {
+                }
+                case "+/-" -> {
                     try {
-                        String txt = inputField.getText().trim().replace(" ", "");
                         String cleaned = txt.replace("÷","/").replace("×","*").replace("−","-");
                         double v = new ExpressionParser(cleaned, false).parse();
                         inputField.setText(formatResult(-v));
                     } catch (Exception ignored) {}
-                } else if (cmd.matches("[0-9]")) {
-                    String txt = inputField.getText();
+                }
+                case "0","1","2","3","4","5","6","7","8","9" -> 
                     inputField.setText(txt.equals("0") ? cmd : txt + cmd);
-                } else if (cmd.equals(".")) {
-                    String txt = inputField.getText();
+                case "." -> {
                     if (!txt.contains(".")) {
                         inputField.setText(txt.equals("0") ? "0." : txt + ".");
                     }
-                } else if ("÷×−+".contains(cmd)) {
-                    String txt = inputField.getText();
+                }
+                case "÷","×","−","+" -> {
                     String op = cmd.equals("÷") ? "/" : cmd.equals("×") ? "*" : cmd.equals("−") ? "-" : "+";
                     inputField.setText(txt + op);
-                } else if (cmd.equals("=")) {
+                }
+                case "=" -> {
                     try {
-                        String expr = inputField.getText().replace("÷", "/").replace("×", "*").replace("−", "-");
+                        String expr = txt.replace("÷", "/").replace("×", "*").replace("−", "-");
                         double res = new ExpressionParser(expr, false).parse();
                         inputField.setText(formatResult(res));
                     } catch (Exception ignored) {}
                 }
-                liveUpdate.run();
-            });
-            if ("÷×−+=".contains(cmd)) btn.setForeground(new Color(255, 165, 0));
-            if (cmd.equals("⌫")) btn.setForeground(new Color(180, 180, 190));
-            keypad.add(btn);
-        }
-
-        dialog.add(keypad, BorderLayout.CENTER);
-
-        dialog.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_EQUALS) {
-                    liveUpdate.run();
-                    e.consume();
-                }
             }
+            liveUpdate.run();
         });
 
-        dialog.setVisible(true);
+        if ("÷×−+=".contains(cmd)) btn.setForeground(new Color(255, 165, 0));
+        if (cmd.equals("⌫")) btn.setForeground(new Color(180, 180, 190));
+        keypad.add(btn);
     }
+
+    dialog.add(keypad, BorderLayout.CENTER);
+
+    // Make dialog focusable and request focus
+    dialog.setFocusable(true);
+    dialog.requestFocusInWindow();
+
+    dialog.setVisible(true);
+}
 
     private JComboBox<String> createStyledCurrencyComboBox(String[] items) {
         JComboBox<String> combo = new JComboBox<>(items) {
