@@ -16,7 +16,7 @@ import java.awt.image.BufferedImage;
  * GlassCalculator - Final Version with AppIcon.icns + Full Currency Converter
  * FIXED: formatResult now correctly shows clean integers when the value is effectively whole
  * (even after floating-point precision errors from rate * amount calculations)
- * 
+ *
  * FIXED ISSUES (except raw JSON parsing):
  * • Hardcoded API key moved to Preferences (can be changed without recompiling)
  * • Concurrent API fetch protection (no more spam when typing fast)
@@ -24,11 +24,15 @@ import java.awt.image.BufferedImage;
  * • Operator symbols now fully consistent (Unicode ÷ × − + everywhere)
  * • Currency swap no longer flashes incorrect values
  * • Minor cleanups and robustness improvements
+ *
+ * NEW: Scientific mode and Currency Converter now share the SAME main window
+ *      using CardLayout (no more separate JDialog windows).
+ *      Switch via the ≡ menu (Convert) or use the "← Back" button in the converter.
  */
 public class GlassCalculator extends JFrame implements ActionListener, KeyListener {
     private JTextField display;
     private boolean startNewInput = true;
-    private String apiKey;                    // Loaded from Preferences (no longer hardcoded)
+    private String apiKey; // Loaded from Preferences (no longer hardcoded)
     private final String[] currencies = {
             "USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "RUB",
             "BRL", "ZAR", "MXN", "SGD", "HKD", "SEK", "NOK", "DKK", "KRW", "TRY"
@@ -62,9 +66,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     }
 
     private static final Map<String, CachedRates> rateCache = new HashMap<>();
-
     // Prevent multiple simultaneous API calls
     private volatile boolean isFetchingRate = false;
+
+    // CardLayout for sharing the main window between Calculator and Converter
+    private CardLayout cardLayout;
+    private JPanel mainCardPanel;
 
     public GlassCalculator() {
         // Load API key from Preferences (user can change it via prefs editor if needed)
@@ -94,7 +101,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         display.setCursor(new Cursor(Cursor.TEXT_CURSOR));
         display.getCaret().setBlinkRate(530);
         display.getCaret().setVisible(true);
-
         topPanel.add(display, BorderLayout.CENTER);
 
         JButton modeButton = new JButton("≡");
@@ -109,13 +115,9 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         modeButton.addActionListener(e -> showModePopup(modeButton));
         topPanel.add(modeButton, BorderLayout.EAST);
 
-        add(topPanel, BorderLayout.NORTH);
-
         buttonPanel = new JPanel();
         buttonPanel.setBackground(new Color(20, 20, 25));
         buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        add(buttonPanel, BorderLayout.CENTER);
-
         updateButtonPanel();
 
         display.addMouseListener(new MouseAdapter() {
@@ -126,6 +128,21 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         });
         display.addKeyListener(this);
         display.requestFocusInWindow();
+
+        // ====================== CARD LAYOUT - SAME WINDOW FOR SCIENTIFIC + CONVERTER ======================
+        JPanel calculatorCard = new JPanel(new BorderLayout(10, 10));
+        calculatorCard.setBackground(new Color(20, 20, 25));
+        calculatorCard.add(topPanel, BorderLayout.NORTH);
+        calculatorCard.add(buttonPanel, BorderLayout.CENTER);
+
+        JPanel converterCard = createConverterPanel();
+
+        cardLayout = new CardLayout();
+        mainCardPanel = new JPanel(cardLayout);
+        mainCardPanel.add(calculatorCard, "calculator");
+        mainCardPanel.add(converterCard, "converter");
+
+        add(mainCardPanel, BorderLayout.CENTER);
 
         // Restore window size/position
         setSize(prefs.getInt("width", 400), prefs.getInt("height", 620));
@@ -300,7 +317,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
         JMenuItem convertItem = new JMenuItem(" Convert");
         stylePopupItem(convertItem);
-        convertItem.addActionListener(e -> openCurrencyConverter());
+        convertItem.addActionListener(e -> cardLayout.show(mainCardPanel, "converter"));
         popup.add(convertItem);
 
         JMenuItem historyItem = new JMenuItem(" History");
@@ -324,7 +341,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         JButton source = (JButton) e.getSource();
         String cmd = source.getText();
         highlightButton(cmd);
-
         switch (cmd) {
             case "AC" -> resetCalculator();
             case "C", "⌫" -> deleteLeftOfCursor();
@@ -387,18 +403,15 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         String current = display.getText().trim();
         int pos = display.getCaretPosition();
         boolean isScientificFunction = isScientificFunction(text);
-
         if (startNewInput) {
             display.setText(text);
             display.setCaretPosition(text.length());
             startNewInput = false;
             return;
         }
-
         char prevChar = (pos > 0) ? current.charAt(pos - 1) : ' ';
         boolean afterOperator = isOperator(prevChar) || prevChar == '(';
         boolean afterNumberOrClose = Character.isDigit(prevChar) || prevChar == ')' || prevChar == 'π' || prevChar == 'e';
-
         if (isScientificFunction) {
             if (afterNumberOrClose) {
                 text = "*" + text;
@@ -411,14 +424,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 return;
             }
         }
-
         String newText = current.substring(0, pos) + text + current.substring(pos);
         display.setText(newText);
         display.setCaretPosition(pos + text.length());
         startNewInput = false;
     }
 
-    // CLEANED: removed dead button-text checks that are never inserted
     private boolean isScientificFunction(String text) {
         if (text == null) return false;
         String t = text.trim();
@@ -449,7 +460,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         if (e.getKeyCode() == KeyEvent.VK_DELETE || e.getKeyCode() == KeyEvent.VK_ESCAPE) {
             resetCalculator(); highlightButton("AC"); e.consume(); return;
         }
-
         char ch = e.getKeyChar();
         switch (ch) {
             case '0'-> {insertAtCursor("0"); highlightButton("0"); e.consume();}
@@ -471,7 +481,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             case '('-> {insertAtCursor("("); highlightButton("("); e.consume();}
             case ')'-> {insertAtCursor(")"); highlightButton(")"); e.consume();}
         }
-
         if (currentMode == Mode.SCIENTIFIC && ch == '!') {
             handleFactorial(); highlightButton("x!"); e.consume();
         }
@@ -717,18 +726,14 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
     private String formatResult(double result) {
         if (Double.isNaN(result) || Double.isInfinite(result)) return "Error";
         if (Math.abs(result) < 1e-10) return "0";
-
-        // Increased from 1e-8 to 1e-4 to handle double rounding error from rate round-trip in swap
         if (Math.abs(result - Math.round(result)) < 1e-4) {
             return String.valueOf(Math.round(result));
         }
-
         double abs = Math.abs(result);
         if (abs >= 1e10 || (abs > 0 && abs < 1e-6)) {
             String s = String.format("%.8g", result);
             return s.replace('e', 'E');
         }
-
         String s = String.format("%.8f", result);
         return s.replaceAll("0+$", "").replaceAll("\\.$", "");
     }
@@ -759,13 +764,10 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         for (int i = history.size(); i < old + 20; i++) prefs.remove("history_" + i);
     }
 
-    // ====================== CURRENCY CONVERTER (ALL REQUESTED FIXES APPLIED) ======================
-    private void openCurrencyConverter() {
-        JDialog dialog = new JDialog(this, "Live Currency Converter", true);
-        dialog.setSize(440, 740);
-        dialog.setLocationRelativeTo(this);
-        dialog.setLayout(new BorderLayout(0, 0));
-        dialog.getContentPane().setBackground(new Color(20, 20, 25));
+    // ====================== CURRENCY CONVERTER NOW IN SAME WINDOW (CardLayout) ======================
+    private JPanel createConverterPanel() {
+        JPanel converterPanel = new JPanel(new BorderLayout(0, 0));
+        converterPanel.setBackground(new Color(20, 20, 25));
 
         JPanel displayArea = new JPanel();
         displayArea.setLayout(new BoxLayout(displayArea, BoxLayout.Y_AXIS));
@@ -808,18 +810,31 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         inputLine.add(inputField, BorderLayout.CENTER);
         inputLine.add(fromBox, BorderLayout.EAST);
 
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        statusPanel.setBackground(new Color(20, 20, 25));
+        // Status panel with Back button (for switching back to calculator in the same window)
         JLabel statusLabel = new JLabel("Live rates • Ready");
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         statusLabel.setForeground(new Color(120, 220, 120));
-        statusPanel.add(statusLabel);
+
+        JButton backBtn = createGlassButton("← Back");
+        backBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        backBtn.setForeground(new Color(80, 200, 255));
+        backBtn.setPreferredSize(new Dimension(130, 40));
+        backBtn.addActionListener(ev -> cardLayout.show(mainCardPanel, "calculator"));
+
+        JPanel statusPanel = new JPanel(new BorderLayout());
+        statusPanel.setBackground(new Color(20, 20, 25));
+        JPanel statusCenter = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        statusCenter.setBackground(new Color(20, 20, 25));
+        statusCenter.add(statusLabel);
+        statusPanel.add(backBtn, BorderLayout.WEST);
+        statusPanel.add(statusCenter, BorderLayout.CENTER);
 
         displayArea.add(resultLine);
         displayArea.add(swapPanel);
         displayArea.add(inputLine);
         displayArea.add(statusPanel);
-        dialog.add(displayArea, BorderLayout.NORTH);
+
+        converterPanel.add(displayArea, BorderLayout.NORTH);
 
         JPanel keypad = new JPanel();
         keypad.setBackground(new Color(20, 20, 25));
@@ -837,7 +852,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     statusLabel.setText("Live rates • Ready");
                     return;
                 }
-
                 double amount;
                 try {
                     String cleaned = inputStr.replace("÷", "/").replace("×", "*").replace("−", "-");
@@ -845,15 +859,12 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                 } catch (Exception ex) {
                     amount = Double.parseDouble(inputStr);
                 }
-
                 String from = (String) fromBox.getSelectedItem();
                 String to = (String) toBox.getSelectedItem();
-
                 if (from.equals(to)) {
                     resultLabel.setText(formatResult(amount));
                     return;
                 }
-
                 CachedRates cached = rateCache.get(from);
                 if (cached != null && !cached.isExpired()) {
                     double rate = cached.rates.getOrDefault(to, 0.0);
@@ -861,16 +872,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     statusLabel.setText("Last updated: " + cached.lastUpdatedUtc);
                     return;
                 }
-
                 if (isFetchingRate) {
                     resultLabel.setText("Waiting for previous fetch...");
                     return;
                 }
-
                 isFetchingRate = true;
                 resultLabel.setText("Fetching...");
                 statusLabel.setText("Connecting to API...");
-
                 new SwingWorker<Void, Void>() {
                     @Override
                     protected Void doInBackground() {
@@ -887,7 +895,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                                 while ((line = in.readLine()) != null) content.append(line);
                             }
                             conn.disconnect();
-
                             String jsonStr = content.toString();
                             Map<String, Double> rates = new HashMap<>();
                             int ratesStart = jsonStr.indexOf("\"conversion_rates\":{");
@@ -907,7 +914,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                                     }
                                 }
                             }
-
                             String lastUpdatedUtc = "Unknown";
                             int keyIndex = jsonStr.indexOf("\"time_last_update_utc\":\"");
                             if (keyIndex != -1) {
@@ -915,7 +921,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                                 int valueEnd = jsonStr.indexOf("\"", valueStart);
                                 if (valueEnd != -1) lastUpdatedUtc = jsonStr.substring(valueStart, valueEnd).trim();
                             }
-
                             rateCache.put(from, new CachedRates(rates, lastUpdatedUtc));
                         } catch (Exception ignored) {}
                         return null;
@@ -927,14 +932,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                         SwingUtilities.invokeLater(liveUpdateHolder[0]);
                     }
                 }.execute();
-
             } catch (Exception ignored) {
                 resultLabel.setText("Error");
             }
         };
         liveUpdateHolder[0] = liveUpdate;
 
-        // Keyboard support
+        // Keyboard support (now on the converter panel itself)
         KeyAdapter currencyKeyListener = new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -949,10 +953,9 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                         }
                         e.consume();
                     }
-                    case KeyEvent.VK_ESCAPE -> { dialog.dispose(); e.consume(); }
+                    case KeyEvent.VK_ESCAPE -> { cardLayout.show(mainCardPanel, "calculator"); e.consume(); }
                     case KeyEvent.VK_DELETE -> { inputField.setText("0"); liveUpdate.run(); e.consume(); }
                 }
-
                 char ch = e.getKeyChar();
                 if (Character.isDigit(ch)) {
                     inputField.setText(txt.equals("0") ? String.valueOf(ch) : txt + ch);
@@ -987,15 +990,13 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             }
         };
 
-        dialog.addKeyListener(currencyKeyListener);
+        converterPanel.addKeyListener(currencyKeyListener);
         inputField.addKeyListener(currencyKeyListener);
 
         // FIXED SWAP LOGIC (no more flash of wrong value)
         swapBtn.addActionListener(e -> {
             String oldFrom = (String) fromBox.getSelectedItem();
             String oldTo = (String) toBox.getSelectedItem();
-
-            // Get current RESULT amount (this becomes the NEW input amount)
             double newInputAmount = 0.0;
             try {
                 String resText = resultLabel.getText().trim();
@@ -1003,19 +1004,11 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                     newInputAmount = Double.parseDouble(resText.replace(",", ""));
                 }
             } catch (Exception ignored) {}
-
-            // Perform swap
             fromBox.setSelectedItem(oldTo);
             toBox.setSelectedItem(oldFrom);
-
-            // New input = old result value
             inputField.setText(formatResult(newInputAmount));
-
-            // Clear result immediately so we don't flash the old wrong number
             resultLabel.setText("Fetching...");
             statusLabel.setText("Connecting to API...");
-
-            // Trigger update (cached or fresh fetch)
             liveUpdate.run();
         });
 
@@ -1055,7 +1048,7 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
                         }
                     }
                     case "÷","×","−","+" ->
-                            inputField.setText(txt + cmd);   // now uses nice Unicode symbols (consistent with parser)
+                            inputField.setText(txt + cmd);
                     case "=" -> {
                         try {
                             String expr = txt.replace("÷", "/").replace("×", "*").replace("−", "-");
@@ -1071,10 +1064,9 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
             keypad.add(btn);
         }
 
-        dialog.add(keypad, BorderLayout.CENTER);
-        dialog.setFocusable(true);
-        dialog.requestFocusInWindow();
-        dialog.setVisible(true);
+        converterPanel.add(keypad, BorderLayout.CENTER);
+        converterPanel.setFocusable(true);
+        return converterPanel;
     }
 
     private JComboBox<String> createStyledCurrencyComboBox(String[] items) {
@@ -1138,7 +1130,6 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
         historyArea.setBackground(new Color(30, 30, 35));
         historyArea.setForeground(Color.WHITE);
         historyArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
         if (history.isEmpty()) {
             historyArea.setText("No calculations performed yet.\n\nPress = to add to history.");
         } else {
@@ -1152,21 +1143,18 @@ public class GlassCalculator extends JFrame implements ActionListener, KeyListen
 
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 10));
         btnPanel.setBackground(new Color(20, 20, 25));
-
         JButton clearBtn = new JButton("Clear History");
         clearBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         clearBtn.setBackground(new Color(220, 50, 50));
         clearBtn.setForeground(Color.WHITE);
         clearBtn.setFocusPainted(false);
         clearBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
-
         JButton closeBtn = new JButton("Close");
         closeBtn.setFont(new Font("Segoe UI", Font.BOLD, 18));
         closeBtn.setBackground(new Color(80, 200, 255));
         closeBtn.setForeground(Color.WHITE);
         closeBtn.setFocusPainted(false);
         closeBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
-
         btnPanel.add(clearBtn);
         btnPanel.add(closeBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
