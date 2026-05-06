@@ -1593,6 +1593,7 @@ public class GlassCalculator extends JFrame {
         keypad.setBorder(new EmptyBorder(8, 18, 24, 18));
 
         // Live convert: debounced to avoid API hammering
+
         Runnable[] liveRef = {null};
         Runnable live = () -> {
             String raw = inputFld.getText().trim();
@@ -1652,6 +1653,7 @@ public class GlassCalculator extends JFrame {
         String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−", "1", "2", "3", "+", "+/-", "0", ".", "="};
         for (String k : keys) {
             GlassButton btn = new GlassButton(k);
+            buttonMap.put(k, btn);
             if ("÷×−+=".contains(k)) btn.setForeground(UITheme.ACCENT_AMBER);
             btn.addActionListener(ev -> {
                 String cur = inputFld.getText();
