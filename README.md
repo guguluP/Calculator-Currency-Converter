@@ -69,22 +69,24 @@ Right-click      → Context menu
 <div align="center">
 
 ### Basic Calculator
-![Basic Calculator](screenshots/basic-calculator.png)
+<img width="1680" height="1050" alt="Screenshot 2026-05-06 at 17 18 33" src="https://github.com/user-attachments/assets/c32d3393-9ad4-480d-8f4d-7962fd650701" />
 
 ### Scientific Mode
-![Scientific Calculator](screenshots/scientific-calculator.png)
+<img width="1680" height="1050" alt="Screenshot 2026-05-06 at 17 18 41" src="https://github.com/user-attachments/assets/30a35004-4046-4929-b725-a50cd1a13447" />
+
 
 ### Currency Converter (Live Rates)
-![Currency Converter](screenshots/currency-converter.png)
+<img width="1680" height="1050" alt="Screenshot 2026-05-06 at 17 19 07" src="https://github.com/user-attachments/assets/020ffe07-0af9-4f42-a231-6f34b292db27" />
+
 
 ### History - Calculations
-![Calculation History](screenshots/history-calculations.png)
+<img width="1680" height="1050" alt="Screenshot 2026-05-06 at 17 19 24" src="https://github.com/user-attachments/assets/ac140367-d58e-42da-90af-81e0b9e62449" />
 
 ### History - Conversions
-![Conversion History](screenshots/history-conversions.png)
+<img width="1680" height="1050" alt="Screenshot 2026-05-06 at 17 19 57" src="https://github.com/user-attachments/assets/08dd1881-3313-4dc5-b76a-2bf2210f0b1e" />
 
 ### Keyboard Shortcuts
-![Keyboard Shortcuts](screenshots/keyboard-shortcuts.png)
+<img width="398" height="229" alt="Screenshot 2026-05-06 at 17 20 20" src="https://github.com/user-attachments/assets/48dbe752-de18-4baa-91c5-2e3fd559293a" />
 
 </div>
 
