@@ -1,49 +1,15 @@
-/**
- * ╔══════════════════════════════════════════════════════════════════════╗
- * ║             GlassCalculator  –  Production Build  v2.0              ║
- * ║                                                                      ║
- * ║  Author-ready: clean architecture, async I/O, polished glassmorphism ║
- * ╠══════════════════════════════════════════════════════════════════════╣
- * ║  WHAT CHANGED FROM v1                                                ║
- * ║  ─────────────────────────────────────────────────────────────────── ║
- * ║  [Architecture]                                                      ║
- * ║   • Layered inner classes: UITheme, DBManager, CurrencyService,      ║
- * ║     CalculatorEngine, ExpressionParser — zero coupling between them  ║
- * ║   • All DB writes off the EDT via single-thread ExecutorService      ║
- * ║   • Currency updates debounced 350 ms via ScheduledExecutorService   ║
- * ║   • DB auto-reconnect with isValid() health check on every write     ║
- * ║                                                                      ║
- * ║  [Performance]                                                       ║
- * ║   • Button panel rebuilt only on mode change (not on every paint)    ║
- * ║   • Rate cache keyed by base currency with 5-min expiry              ║
- * ║   • formatResult avoids redundant regex on integers                  ║
- * ║   • History capped at 100 entries; saved async on close              ║
- * ║                                                                      ║
- * ║  [UX / Visual]                                                       ║
- * ║   • Ripple animation on every button press (scale + fade)            ║
- * ║   • Toast notification overlay (copy, memory, errors)                ║
- * ║   • Right-click context menu on display (copy, paste, clear, hist.)  ║
- * ║   • Status bar: DB indicator + angle mode + memory badge             ║
- * ║   • Gradient mesh background; inner-glow glass buttons               ║
- * ║   • Smooth slide-in history panel (replaces modal dialog)            ║
- * ║   • Display auto-scales font when expression is long                 ║
- * ║                                                                      ║
- * ║  [Robustness]                                                        ║
- * ║   • ExpressionParser: implicit multiplication, nested parens,        ║
- * ║     E-notation, unary minus anywhere in expression                   ║
- * ║   • Currency JSON parsed char-by-char (no external JSON library)     ║
- * ║   • Preferences saved synchronously before process exits             ║
- * ║   • All SwingWorkers guarded against race conditions with AtomicBool ║
- * ╚══════════════════════════════════════════════════════════════════════╝
- */
+
 package Project;
 
 import javax.swing.*;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.event.*;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.awt.Taskbar;
 import java.io.*;
 import java.net.*;
 import java.sql.*;
@@ -507,7 +473,7 @@ public class GlassCalculator extends JFrame {
     // ═══════════════════════════════════════════════════════════════════
     private final class Toast extends JWindow {
         private float alpha = 0f;
-        private final javax.swing.Timer fadeIn, fadeOut;
+        private final Timer fadeIn, fadeOut;
 
         Toast(String message) {
             super(GlassCalculator.this);
@@ -537,8 +503,8 @@ public class GlassCalculator extends JFrame {
             pack();
             setBackground(new Color(0, 0, 0, 0));
 
-            fadeIn = new javax.swing.Timer(25, null);
-            fadeOut = new javax.swing.Timer(25, null);
+            fadeIn = new Timer(25, null);
+            fadeOut = new Timer(25, null);
             fadeIn.addActionListener(e -> {
                 alpha = Math.min(alpha + 0.1f, 1f);
                 repaint();
@@ -562,7 +528,7 @@ public class GlassCalculator extends JFrame {
             setLocation(x, y);
             setVisible(true);
             fadeIn.start();
-            new javax.swing.Timer(2000, e -> {
+            new Timer(2000, e -> {
                 fadeIn.stop();
                 fadeOut.start();
             }).start();
@@ -574,7 +540,7 @@ public class GlassCalculator extends JFrame {
     // ═══════════════════════════════════════════════════════════════════
     private static final class GlassButton extends JButton {
         private float rippleAlpha = 0f;
-        private final javax.swing.Timer rippleTimer;
+        private final Timer rippleTimer;
 
         GlassButton(String text) {
             super(text);
@@ -587,7 +553,7 @@ public class GlassCalculator extends JFrame {
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             setBorder(new EmptyBorder(16, 10, 16, 10));
 
-            rippleTimer = new javax.swing.Timer(20, null);
+            rippleTimer = new Timer(20, null);
             rippleTimer.addActionListener(e -> {
                 rippleAlpha = Math.max(rippleAlpha - 0.06f, 0f);
                 repaint();
@@ -699,6 +665,7 @@ public class GlassCalculator extends JFrame {
     private JPanel mainCardPanel;
 
     private JLabel statusDB, statusAngle, statusMem;
+    private JLabel modeLabel;
 
     private final String[] CURRENCIES = {
             "USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "RUB",
@@ -713,7 +680,8 @@ public class GlassCalculator extends JFrame {
     private String lastOperator = "";
     private boolean repeatPossible = false;
 
-    private final List<String> history = new ArrayList<>();
+    private final List<String> calcHistory = new ArrayList<>();
+    private final List<String> convHistory = new ArrayList<>();
 
     private enum Mode {BASIC, SCIENTIFIC}
 
@@ -784,12 +752,16 @@ public class GlassCalculator extends JFrame {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  HEADER  (display + hamburger menu button)
+    //  HEADER  (display + mode indicator + hamburger menu button)
     // ─────────────────────────────────────────────────────────────────
     private JPanel buildHeader() {
         JPanel h = new JPanel(new BorderLayout());
         h.setBackground(UITheme.BG_DEEP);
         h.setBorder(new EmptyBorder(10, 12, 6, 6));
+
+        modeLabel = new JLabel("Calculator", SwingConstants.CENTER);
+        modeLabel.setFont(UITheme.FONT_LABEL);
+        modeLabel.setForeground(UITheme.TEXT_DIM);
 
         GlassButton menuBtn = new GlassButton("≡");
         menuBtn.setFont(new Font("Segoe UI", Font.BOLD, 32));
@@ -797,8 +769,13 @@ public class GlassCalculator extends JFrame {
         menuBtn.setPreferredSize(new Dimension(58, 58));
         menuBtn.addActionListener(e -> showMenu(menuBtn));
 
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        rightPanel.setOpaque(false);
+        rightPanel.add(modeLabel);
+        rightPanel.add(menuBtn);
+
         h.add(display, BorderLayout.CENTER);
-        h.add(menuBtn, BorderLayout.EAST);
+        h.add(rightPanel, BorderLayout.EAST);
         return h;
     }
 
@@ -814,12 +791,19 @@ public class GlassCalculator extends JFrame {
         statusAngle = makeStatusLabel("DEG", UITheme.TEXT_DIM);
         statusMem = makeStatusLabel("M: 0", UITheme.TEXT_DIM);
 
+        // New DB + Preferences status
+        JLabel statusStorage = new JLabel("💾 DB + Prefs");
+        statusStorage.setFont(UITheme.FONT_STATUS);
+        statusStorage.setForeground(UITheme.ACCENT_GREEN);
+
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         left.setOpaque(false);
         right.setOpaque(false);
 
         left.add(statusDB);
+        left.add(statusStorage);           // ← New
+
         right.add(statusMem);
         right.add(statusAngle);
 
@@ -841,8 +825,8 @@ public class GlassCalculator extends JFrame {
             statusDB.setText(ok ? "● DB" : "○ DB");
             statusDB.setForeground(ok ? UITheme.ACCENT_GREEN : UITheme.ACCENT_RED);
         }
-        if (statusAngle != null) statusAngle.setText(radianMode ? "RAD" : "DEG");
-        if (statusMem != null) statusMem.setText("M: " + fmt(memory));
+        if (statusAngle != null) statusAngle.setText("∠ " + (radianMode ? "RAD" : "DEG"));
+        if (statusMem != null) statusMem.setText("💾 M: " + fmt(memory));
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -861,9 +845,13 @@ public class GlassCalculator extends JFrame {
                 () -> switchMode(Mode.SCIENTIFIC));
 
         m.addSeparator();
-        addStyledMenuItem(m, "Currency Converter", () -> cardLayout.show(mainCardPanel, "fx"));
+        addStyledMenuItem(m, "Currency Converter", () -> {
+            cardLayout.show(mainCardPanel, "fx");
+            modeLabel.setText("Currency");
+        });
         addStyledMenuItem(m, "History", this::openHistoryPanel);
         m.addSeparator();
+        addStyledMenuItem(m, "About", this::showAbout);
         addStyledMenuItem(m, "Keyboard Shortcuts", this::showKeyboardHelp);
 
         m.show(anchor, anchor.getWidth() - 240, anchor.getHeight() + 6);
@@ -872,6 +860,7 @@ public class GlassCalculator extends JFrame {
     private void switchMode(Mode mode) {
         if (currentMode != mode) {
             currentMode = mode;
+            modeLabel.setText(mode == Mode.BASIC ? "Basic" : "Scientific");
             rebuildButtons();
         }
     }
@@ -1174,7 +1163,9 @@ public class GlassCalculator extends JFrame {
             double result = eval(cur);
             String fmtResult = fmt(result);
             display.setText(fmtResult);
-            addToHistory(cur + " = " + fmtResult);
+            
+            String entry = cur + " = " + fmtResult;
+            addCalculationToHistory(entry);           // ← Changed
             db.saveAsync(cur, fmtResult);
             // Extract for repeat operator (pressing = again)
             extractLastOp(cur);
@@ -1227,24 +1218,57 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     //  HISTORY  (preferences + in-memory)
     // ─────────────────────────────────────────────────────────────────
-    private void addToHistory(String entry) {
-        history.add(0, entry);
-        if (history.size() > 100) history.remove(history.size() - 1);
+    private void addToHistory(String entry, boolean isConversion) {
+        List<String> target = isConversion ? convHistory : calcHistory;
+        
+        if (target.contains(entry)) return; // avoid duplicates
+        
+        target.add(0, entry);
+        if (target.size() > 100) target.remove(target.size() - 1);
+    }
+
+    private void addCalculationToHistory(String entry) {
+        addToHistory(entry, false);
+    }
+
+    private void addConversionToHistory(String entry) {
+        addToHistory(entry, true);
     }
 
     private void loadHistoryFromPrefs() {
         Preferences p = Preferences.userNodeForPackage(GlassCalculator.class);
-        int n = p.getInt("histN", 0);
-        for (int i = 0; i < n; i++) {
-            String e = p.get("hist_" + i, null);
-            if (e != null) history.add(e);
+        
+        // Load Calculation History
+        int nCalc = p.getInt("histCalcN", 0);
+        calcHistory.clear();
+        for (int i = 0; i < nCalc; i++) {
+            String e = p.get("histCalc_" + i, null);
+            if (e != null) calcHistory.add(e);
+        }
+
+        // Load Conversion History
+        int nConv = p.getInt("histConvN", 0);
+        convHistory.clear();
+        for (int i = 0; i < nConv; i++) {
+            String e = p.get("histConv_" + i, null);
+            if (e != null) convHistory.add(e);
         }
     }
 
     private void saveHistoryToPrefs() {
         Preferences p = Preferences.userNodeForPackage(GlassCalculator.class);
-        p.putInt("histN", history.size());
-        for (int i = 0; i < history.size(); i++) p.put("hist_" + i, history.get(i));
+        
+        // Save Calculation History
+        p.putInt("histCalcN", calcHistory.size());
+        for (int i = 0; i < calcHistory.size(); i++) {
+            p.put("histCalc_" + i, calcHistory.get(i));
+        }
+        
+        // Save Conversion History
+        p.putInt("histConvN", convHistory.size());
+        for (int i = 0; i < convHistory.size(); i++) {
+            p.put("histConv_" + i, convHistory.get(i));
+        }
     }
 
     private void reset() {
@@ -1259,48 +1283,122 @@ public class GlassCalculator extends JFrame {
     //  HISTORY PANEL  (slide-in inside the main window)
     // ─────────────────────────────────────────────────────────────────
     private void openHistoryPanel() {
-        JDialog dlg = new JDialog(this, "Calculation History", true);
-        dlg.setSize(520, 580);
+        JDialog dlg = new JDialog(this, "History", true);
+        dlg.setSize(580, 650);
         dlg.setLocationRelativeTo(this);
         dlg.getContentPane().setBackground(UITheme.BG_DEEP);
 
         JLabel title = new JLabel("History", SwingConstants.CENTER);
-        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        title.setFont(new Font("Segoe UI", Font.BOLD, 26));
         title.setForeground(UITheme.ACCENT_CYAN);
-        title.setBorder(new EmptyBorder(16, 0, 12, 0));
+        title.setBorder(new EmptyBorder(16, 0, 8, 0));
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setBackground(UITheme.BG_DEEP);
+        tabbedPane.setForeground(UITheme.TEXT_PRIMARY);
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 14));
+
+        // Calculations Tab
+        tabbedPane.addTab("Calculations",
+            createHistoryTab(calcHistory, "No calculations yet.", "Calculation History"));
+
+        // Conversions Tab
+        tabbedPane.addTab("Conversions",
+            createHistoryTab(convHistory, "No conversions yet.", "Conversion History"));
+
+        // Storage Info
+        JLabel storageInfo = new JLabel("💾 All entries are saved in:  Preferences  +  MySQL Database",
+                                       SwingConstants.CENTER);
+        storageInfo.setFont(UITheme.FONT_STATUS);
+        storageInfo.setForeground(UITheme.TEXT_DIM);
+        storageInfo.setBorder(new EmptyBorder(8, 0, 8, 0));
+
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 12));
+        btnPanel.setBackground(UITheme.BG_DEEP);
+
+        JButton clearCalcBtn = styledDialogBtn("Clear Calculations", new Color(255, 100, 100));
+        JButton clearConvBtn = styledDialogBtn("Clear Conversions", new Color(255, 100, 100));
+        JButton clearAllBtn = styledDialogBtn("Clear All", UITheme.ACCENT_RED);
+        JButton closeBtn = styledDialogBtn("Close", UITheme.ACCENT_CYAN);
+
+        clearCalcBtn.addActionListener(e -> {
+            if (JOptionPane.showConfirmDialog(dlg, "Clear all Calculation history?",
+                "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                calcHistory.clear();
+                saveHistoryToPrefs();
+                refreshHistoryTabs(tabbedPane);
+            }
+        });
+
+        clearConvBtn.addActionListener(e -> {
+            if (JOptionPane.showConfirmDialog(dlg, "Clear all Conversion history?",
+                "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                convHistory.clear();
+                saveHistoryToPrefs();
+                refreshHistoryTabs(tabbedPane);
+            }
+        });
+
+        clearAllBtn.addActionListener(e -> {
+            if (JOptionPane.showConfirmDialog(dlg, "Clear ALL history (both tabs)?",
+                "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                calcHistory.clear();
+                convHistory.clear();
+                saveHistoryToPrefs();
+                refreshHistoryTabs(tabbedPane);
+            }
+        });
+
+        closeBtn.addActionListener(e -> dlg.dispose());
+
+        btnPanel.add(clearCalcBtn);
+        btnPanel.add(clearConvBtn);
+        btnPanel.add(clearAllBtn);
+        btnPanel.add(closeBtn);
+
+        JPanel content = new JPanel(new BorderLayout());
+        content.setBackground(UITheme.BG_DEEP);
+        content.add(title, BorderLayout.NORTH);
+        content.add(tabbedPane, BorderLayout.CENTER);
+        content.add(storageInfo, BorderLayout.SOUTH);
+
+        dlg.add(content, BorderLayout.CENTER);
+        dlg.add(btnPanel, BorderLayout.SOUTH);
+        dlg.setVisible(true);
+    }
+
+    private JPanel createHistoryTab(List<String> list, String emptyText, String tabName) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(UITheme.BG_DEEP);
 
         JTextArea area = new JTextArea();
         area.setEditable(false);
-        area.setFont(new Font("Segoe UI", Font.PLAIN, 17));
+        area.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         area.setBackground(UITheme.BG_SURFACE);
         area.setForeground(UITheme.TEXT_PRIMARY);
         area.setBorder(new EmptyBorder(16, 20, 16, 20));
         area.setLineWrap(true);
-        area.setText(history.isEmpty() ? "No calculations yet." : String.join("\n\n", history));
+        area.setText(list.isEmpty() ? emptyText : String.join("\n\n", list));
 
         JScrollPane scroll = new JScrollPane(area);
         scroll.setBorder(null);
+        panel.add(scroll, BorderLayout.CENTER);
 
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 12));
-        btnPanel.setBackground(UITheme.BG_DEEP);
+        return panel;
+    }
 
-        JButton clearBtn = styledDialogBtn("Clear History", UITheme.ACCENT_RED);
-        JButton closeBtn = styledDialogBtn("Close", UITheme.ACCENT_CYAN);
+    private void refreshHistoryTabs(JTabbedPane tabbedPane) {
+        // Refresh both tabs
+        for (int i = 0; i < tabbedPane.getTabCount(); i++) {
+            JPanel tab = (JPanel) tabbedPane.getComponentAt(i);
+            JScrollPane scroll = (JScrollPane) tab.getComponent(0);
+            JTextArea area = (JTextArea) scroll.getViewport().getView();
 
-        clearBtn.addActionListener(e -> {
-            history.clear();
-            saveHistoryToPrefs();
-            area.setText("History cleared.");
-        });
-        closeBtn.addActionListener(e -> dlg.dispose());
+            List<String> list = (i == 0) ? calcHistory : convHistory;
+            String empty = (i == 0) ? "No calculations yet." : "No conversions yet.";
 
-        btnPanel.add(clearBtn);
-        btnPanel.add(closeBtn);
-
-        dlg.add(title, BorderLayout.NORTH);
-        dlg.add(scroll, BorderLayout.CENTER);
-        dlg.add(btnPanel, BorderLayout.SOUTH);
-        dlg.setVisible(true);
+            area.setText(list.isEmpty() ? empty : String.join("\n\n", list));
+        }
     }
 
     private JButton styledDialogBtn(String text, Color color) {
@@ -1336,6 +1434,30 @@ public class GlassCalculator extends JFrame {
         ta.setForeground(UITheme.TEXT_PRIMARY);
 
         JOptionPane.showMessageDialog(this, new JScrollPane(ta), "Keyboard Shortcuts", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  ABOUT DIALOG
+    // ─────────────────────────────────────────────────────────────────
+    private void showAbout() {
+        String about = """
+                GlassCalculator v2.0
+
+                A modern, glassmorphism-themed calculator with scientific functions,
+                currency conversion, and database-backed history.
+
+                Built with Java Swing.
+
+                Author: Ready-made application
+                """;
+
+        JTextArea ta = new JTextArea(about);
+        ta.setEditable(false);
+        ta.setFont(new Font("Monospaced", Font.PLAIN, 15));
+        ta.setBackground(UITheme.BG_SURFACE);
+        ta.setForeground(UITheme.TEXT_PRIMARY);
+
+        JOptionPane.showMessageDialog(this, new JScrollPane(ta), "About GlassCalculator", JOptionPane.PLAIN_MESSAGE);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1398,7 +1520,7 @@ public class GlassCalculator extends JFrame {
         try {
             return (String) Toolkit.getDefaultToolkit()
                     .getSystemClipboard()
-                    .getData(java.awt.datatransfer.DataFlavor.stringFlavor);
+                    .getData(DataFlavor.stringFlavor);
         } catch (Exception e) {
             return null;
         }
@@ -1564,6 +1686,28 @@ public class GlassCalculator extends JFrame {
         inputRow.add(inputFld, BorderLayout.CENTER);
         inputRow.add(fromBox, BorderLayout.EAST);
 
+        Runnable commitHistory = () -> {
+            String input = inputFld.getText().trim();
+            String result = resultLbl.getText().trim();
+            String from = (String) fromBox.getSelectedItem();
+            String to = (String) toBox.getSelectedItem();
+
+            if (input.isEmpty() || result.isEmpty() ||
+                result.equals("0") || result.equals("Fetching...") ||
+                result.equals("Error") || from.equals(to)) {
+                return;
+            }
+
+            String historyEntry = String.format("%s %s = %s %s", input, from, result, to);
+
+            addConversionToHistory(historyEntry);     // ← Use conversion history
+
+            // Save to DB async
+            db.saveAsync(input + " " + from, result + " " + to);
+
+            toast("Conversion saved to history");
+        };
+
         // Status row
         JLabel statusLbl = new JLabel("Live rates · Ready", SwingConstants.CENTER);
         statusLbl.setFont(UITheme.FONT_STATUS);
@@ -1631,6 +1775,9 @@ public class GlassCalculator extends JFrame {
                         if (!Double.isNaN(r2)) {
                             resultLbl.setText(fmt(finalAmount * r2));
                             statusLbl.setText("Updated: " + fx.lastUpdated(f));
+
+                            // <<< SAVE TO HISTORY >>>
+                            commitHistory.run();
                         }
                     },
                     () -> {
@@ -1645,6 +1792,7 @@ public class GlassCalculator extends JFrame {
             } else {
                 resultLbl.setText(fmt(finalAmount * rate));
                 statusLbl.setText("Updated: " + fx.lastUpdated(from));
+                commitHistory.run();   // immediate save if rate was cached
             }
         };
         liveRef[0] = live;
@@ -1747,42 +1895,85 @@ public class GlassCalculator extends JFrame {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  APP ICON  (tries files, falls back to programmatic icon)
+    //  APP ICON  –  Robust loading for title bar + taskbar/dock
     // ─────────────────────────────────────────────────────────────────
     private void setAppIcon() {
-        for (String p : new String[]{"/AppIcon.icns", "/AppIcon.png", "/icon.png", "icon.png"}) {
-            try {
-                URL url = getClass().getResource(p);
-                if (url != null) {
-                    setIconImage(Toolkit.getDefaultToolkit().getImage(url));
-                    return;
-                }
-            } catch (Exception ignored) {
+        java.util.List<Image> icons = new java.util.ArrayList<>();
+
+        // 1. Try as resource in the same package (AppIcon.png in Project/)
+        try {
+            URL url = getClass().getResource("AppIcon.png");
+            if (url != null) {
+                Image img = Toolkit.getDefaultToolkit().getImage(url);
+                icons.add(img);
+                System.out.println("✅ Loaded AppIcon.png from resources");
             }
+        } catch (Exception ignored) {}
+
+        // 2. Try the PNG file in the project directory
+        try {
+            File pngFile = new File("AppIcon.png");
+            if (pngFile.exists()) {
+                Image img = Toolkit.getDefaultToolkit().getImage(pngFile.getAbsolutePath());
+                icons.add(img);
+                System.out.println("✅ Loaded AppIcon.png from project directory");
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from project directory: " + e.getMessage());
         }
-        setIconImage(buildFallbackIcon());
+
+        // 3. Try .icns as backup
+        try {
+            File icnsFile = new File("AppIcon.icns");
+            if (icnsFile.exists()) {
+                Image img = Toolkit.getDefaultToolkit().getImage(icnsFile.getAbsolutePath());
+                icons.add(img);
+                System.out.println("✅ Loaded AppIcon.icns");
+            }
+        } catch (Exception ignored) {}
+
+        // 4. Use high-quality fallback if nothing loaded
+        if (icons.isEmpty()) {
+            icons.add(createHighQualityIcon());
+            System.out.println("⚠️ Using programmatic fallback icon");
+        }
+
+        // Set multiple sizes for best compatibility
+        setIconImages(icons);
+
+        // Force refresh on some platforms
+        if (getIconImage() == null && !icons.isEmpty()) {
+            setIconImage(icons.get(0));
+        }
+
+        // Set taskbar/dock icon for better visibility in IDEs like IntelliJ
+        if (Taskbar.isTaskbarSupported() && !icons.isEmpty()) {
+            Taskbar.getTaskbar().setIconImage(icons.get(0));
+        }
     }
 
-    private Image buildFallbackIcon() {
-        int sz = 256;
-        BufferedImage img = new BufferedImage(sz, sz, BufferedImage.TYPE_INT_ARGB);
+    private Image createHighQualityIcon() {
+        int size = 256;
+        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
-        // Outer rounded rect
         g.setColor(new Color(30, 30, 42));
-        g.fillRoundRect(10, 10, sz - 20, sz - 20, 50, 50);
+        g.fillRoundRect(20, 20, size - 40, size - 40, 60, 60);
 
-        // Glass sheen
-        GradientPaint gp = new GradientPaint(10, 10, new Color(255, 255, 255, 80), 10, sz / 2, new Color(255, 255, 255, 0));
-        g.setPaint(gp);
-        g.fillRoundRect(10, 10, sz - 20, (sz - 20) / 2, 50, 50);
-
-        // "=" symbol
         g.setColor(UITheme.ACCENT_AMBER);
-        g.setFont(new Font("Segoe UI", Font.BOLD, 100));
+        g.setStroke(new BasicStroke(20));
+        g.drawRoundRect(45, 45, size - 90, size - 90, 40, 40);
+
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Segoe UI", Font.BOLD, 140));
         FontMetrics fm = g.getFontMetrics();
-        g.drawString("=", (sz - fm.stringWidth("=")) / 2, sz / 2 + fm.getAscent() / 2 - 10);
+        String eq = "=";
+        int x = (size - fm.stringWidth(eq)) / 2;
+        int y = (size + fm.getAscent()) / 2 - 10;
+        g.drawString(eq, x, y);
+
         g.dispose();
         return img;
     }
