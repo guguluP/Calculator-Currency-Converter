@@ -448,6 +448,13 @@ Perfect for learning intermediate to advanced Java desktop development!
 
 ## 📞 Support
 
+## ❤️ Support / Contact
+
+If you like this project and want to support development, follow me on X (Twitter):  
+**[@Piyush_legionP](https://x.com/Piyush_legionP)**
+
+Feel free to report issues, suggest features, or just say hi!
+
 ### Getting Help
 - **Issues**: Check [GitHub Issues](https://github.com/guguluP/Calculator-Currency-Converter/issues)
 - **Discussions**: Start a [GitHub Discussion](https://github.com/guguluP/Calculator-Currency-Converter/discussions)
