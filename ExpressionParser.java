@@ -1,32 +1,26 @@
 package Project.model;
 
-import java.util.function.*;
-
-/**
- * A recursive descent parser for mathematical expressions.
- * Supports arithmetic operations, trigonometric functions, and constants.
- */
 public final class ExpressionParser {
     private final String expr;
     private final boolean radians;
     private int pos;
 
     public ExpressionParser(String expression, boolean radians) {
-        // Normalise operators to ASCII and remove spaces
+        // Normalise operators to ASCII
         this.expr = expression.trim()
-                .replace('×', '*').replace('÷', '/').replace('−', '-')
-                .replaceAll("\\s+", ""); // remove all whitespace
+                .replace('×', '*').replace('÷', '/').replace('−', '-');
         this.radians = radians;
         this.pos = 0;
     }
 
-    /**
-     * Parses the expression and returns the result.
-     * @return the computed value
-     * @throws ArithmeticException if parsing fails or division by zero occurs
-     */
+    private void skipWS() {
+        while (pos < expr.length() && Character.isWhitespace(expr.charAt(pos))) pos++;
+    }
+
     public double parse() throws ArithmeticException {
+        skipWS();
         double v = addSub();
+        skipWS();
         if (pos < expr.length()) throw new ArithmeticException(
                 "Unexpected token at " + pos + ": '" + expr.charAt(pos) + "'");
         return v;
@@ -34,41 +28,57 @@ public final class ExpressionParser {
 
     // ── Grammar ──────────────────────────────────────────────────
     // addSub   = mulDiv (('+' | '-') mulDiv)*
-    // mulDiv   = power  (('*' | '/') power  | implicit-mul)*
-    // power    = unary  ('^' power)?
-    // unary    = '-' unary | primary
+    // mulDiv   = unary  (('*' | '/') unary  | implicit-mul)*
+    // unary    = '-' unary | '+' unary | power          ← sits ABOVE power so
+    // power    = primary ('^' unary)?                      -2^2 = -(2^2) = -4
     // primary  = number | '(' addSub ')' | function '(' addSub ')' | const
     // ─────────────────────────────────────────────────────────────
 
     private double addSub() throws ArithmeticException {
+        skipWS();
         double v = mulDiv();
+        skipWS();
         while (pos < expr.length()) {
             char c = expr.charAt(pos);
             if (c == '+') {
                 pos++;
+                skipWS();
                 v += mulDiv();
+                skipWS();
             } else if (c == '-') {
                 pos++;
+                skipWS();
                 v -= mulDiv();
+                skipWS();
             } else break;
         }
         return v;
     }
 
     private double mulDiv() throws ArithmeticException {
-        double v = power();
+        skipWS();
+        // FIX 1: call unary() (not power()) so that the chain is
+        //         mulDiv → unary → power → primary
+        //         This makes unary-minus bind looser than '^'.
+        double v = unary();
+        skipWS();
         while (pos < expr.length()) {
             char c = expr.charAt(pos);
             if (c == '*') {
                 pos++;
-                v *= power();
+                skipWS();
+                v *= unary();   // FIX 1 (cont.): was power()
+                skipWS();
             } else if (c == '/') {
                 pos++;
-                double d = power();
+                skipWS();
+                double d = unary();   // FIX 1 (cont.): was power()
                 if (d == 0) throw new ArithmeticException("Division by zero");
                 v /= d;
+                skipWS();
             } else if (startsNewPrimary()) {   // implicit multiplication
-                v *= power();
+                v *= unary();   // FIX 1 (cont.): was power()
+                skipWS();
             } else break;
         }
         return v;
@@ -85,32 +95,42 @@ public final class ExpressionParser {
                 s.startsWith("asinh(") || s.startsWith("acosh(") || s.startsWith("atanh(") ||
                 s.startsWith("log2(") || s.startsWith("log(") || s.startsWith("ln(") ||
                 s.startsWith("sqrt(") || s.startsWith("cbrt(") || s.startsWith("pi") ||
+                s.startsWith("π") ||   // FIX 2: was missing — broke implicit mul like 2π
                 s.startsWith("√(") ||
                 (c == 'e' && (pos + 1 >= expr.length() || !Character.isLetter(expr.charAt(pos + 1))));
     }
 
+    // FIX 1 (cont.): power() now calls primary() directly (not unary()).
+    //   The exponent side still goes through unary() so that e.g. 2^-3 works.
     private double power() throws ArithmeticException {
-        double base = unary();
+        skipWS();
+        double base = primary();   // was unary() — caused -2^2 == 4 instead of -4
+        skipWS();
         if (pos < expr.length() && expr.charAt(pos) == '^') {
             pos++;
-            return Math.pow(base, power()); // right-associative
+            skipWS();
+            return Math.pow(base, unary()); // right-associative; exponent via unary() allows 2^-3
         }
         return base;
     }
 
     private double unary() throws ArithmeticException {
+        skipWS();
         if (pos < expr.length() && expr.charAt(pos) == '-') {
             pos++;
+            skipWS();
             return -unary();
         }
         if (pos < expr.length() && expr.charAt(pos) == '+') {
             pos++;
+            skipWS();
             return unary();
         }
-        return primary();
+        return power();   // FIX 1 (cont.): was primary()
     }
 
     private double primary() throws ArithmeticException {
+        skipWS();
         if (pos >= expr.length()) throw new ArithmeticException("Unexpected end of expression");
         char c = expr.charAt(pos);
 
@@ -120,43 +140,47 @@ public final class ExpressionParser {
         // Parenthesised group
         if (c == '(') {
             pos++;
+            skipWS();
             double v = addSub();
-            if (pos < expr.length() && expr.charAt(pos) == ')') pos++;
+            skipWS();
+            expect(')');
             return v;
         }
 
         // Named functions / constants
         String s = expr.substring(pos);
 
-        if (s.startsWith("asin(")) return fn1("asin(", 5, v -> {
+        if (s.startsWith("asin(")) return fn1(5, v -> {
             double r = Math.asin(v);
             return radians ? r : Math.toDegrees(r);
         });
-        if (s.startsWith("acos(")) return fn1("acos(", 5, v -> {
+        if (s.startsWith("acos(")) return fn1(5, v -> {
             double r = Math.acos(v);
             return radians ? r : Math.toDegrees(r);
         });
-        if (s.startsWith("atan(")) return fn1("atan(", 5, v -> {
+        if (s.startsWith("atan(")) return fn1(5, v -> {
             double r = Math.atan(v);
             return radians ? r : Math.toDegrees(r);
         });
-        if (s.startsWith("sin(")) return fn1("sin(", 4, v -> Math.sin(radians ? v : Math.toRadians(v)));
-        if (s.startsWith("cos(")) return fn1("cos(", 4, v -> Math.cos(radians ? v : Math.toRadians(v)));
-        if (s.startsWith("tan(")) return fn1("tan(", 4, v -> Math.tan(radians ? v : Math.toRadians(v)));
-        if (s.startsWith("asinh(")) return fn1("asinh(", 6, v -> Math.log(v + Math.sqrt(v * v + 1)));
-        if (s.startsWith("acosh(")) return fn1("acosh(", 6, v -> Math.log(v + Math.sqrt(v * v - 1)));
-        if (s.startsWith("atanh(")) return fn1("atanh(", 6, v -> 0.5 * Math.log((1 + v) / (1 - v)));
-        if (s.startsWith("sinh(")) return fn1("sinh(", 5, Math::sinh);
-        if (s.startsWith("cosh(")) return fn1("cosh(", 5, Math::cosh);
-        if (s.startsWith("tanh(")) return fn1("tanh(", 5, Math::tanh);
-        if (s.startsWith("log2(")) return fn1("log2(", 5, v -> Math.log(v) / Math.log(2));
-        if (s.startsWith("log(")) return fn1("log(", 4, Math::log10);
-        if (s.startsWith("ln(")) return fn1("ln(", 3, Math::log);
-        if (s.startsWith("sqrt(")) return fn1("sqrt(", 5, Math::sqrt);
-        if (s.startsWith("cbrt(")) return fn1("cbrt(", 5, Math::cbrt);
+        if (s.startsWith("sin(")) return fn1(4, v -> Math.sin(radians ? v : Math.toRadians(v)));
+        if (s.startsWith("cos(")) return fn1(4, v -> Math.cos(radians ? v : Math.toRadians(v)));
+        if (s.startsWith("tan(")) return fn1(4, v -> Math.tan(radians ? v : Math.toRadians(v)));
+        if (s.startsWith("asinh(")) return fn1(6, v -> Math.log(v + Math.sqrt(v * v + 1)));
+        if (s.startsWith("acosh(")) return fn1(6, v -> Math.log(v + Math.sqrt(v * v - 1)));
+        if (s.startsWith("atanh(")) return fn1(6, v -> 0.5 * Math.log((1 + v) / (1 - v)));
+        if (s.startsWith("sinh(")) return fn1(5, Math::sinh);
+        if (s.startsWith("cosh(")) return fn1(5, Math::cosh);
+        if (s.startsWith("tanh(")) return fn1(5, Math::tanh);
+        if (s.startsWith("log2(")) return fn1(5, v -> Math.log(v) / Math.log(2));
+        if (s.startsWith("log(")) return fn1(4, Math::log10);
+        if (s.startsWith("ln(")) return fn1(3, Math::log);
+        if (s.startsWith("sqrt(")) return fn1(5, Math::sqrt);
+        if (s.startsWith("cbrt(")) return fn1(5, Math::cbrt);
         if (s.startsWith("√(")) {
             pos += 2;
+            skipWS();
             double v = addSub();
+            skipWS();
             expect(')');
             return Math.sqrt(v);
         }
@@ -176,14 +200,22 @@ public final class ExpressionParser {
         throw new ArithmeticException("Unknown token: '" + s.charAt(0) + "' at pos " + pos);
     }
 
+    // FIX 3: Removed unused 'tag' parameter (was accepted but never read).
+    // FIX 4 & 5: Replaced custom DoubleUnary interface (and the unused
+    //             'import java.util.function.*') with a local SAM. The standard
+    //             DoubleUnaryOperator can't declare 'throws ArithmeticException',
+    //             so we keep a minimal private interface — but we no longer
+    //             maintain a dead import alongside it.
     @FunctionalInterface
-    interface DoubleUnary {
+    private interface DoubleUnary {
         double apply(double v) throws ArithmeticException;
     }
 
-    private double fn1(String tag, int len, DoubleUnary fn) throws ArithmeticException {
+    private double fn1(int len, DoubleUnary fn) throws ArithmeticException {
         pos += len;
+        skipWS();
         double v = addSub();
+        skipWS();
         expect(')');
         return fn.apply(v);
     }
@@ -191,8 +223,8 @@ public final class ExpressionParser {
     private double parseNumber() {
         int start = pos;
         while (pos < expr.length() && (Character.isDigit(expr.charAt(pos)) || expr.charAt(pos) == '.')) pos++;
-        // E-notation: e.g. 1.5E+10
-        if (pos < expr.length() && (expr.charAt(pos) == 'E')) {
+        // E-notation: e.g. 1.5e+10 or 1.5E-10
+        if (pos < expr.length() && Character.toLowerCase(expr.charAt(pos)) == 'e') {
             pos++;
             if (pos < expr.length() && (expr.charAt(pos) == '+' || expr.charAt(pos) == '-')) pos++;
             while (pos < expr.length() && Character.isDigit(expr.charAt(pos))) pos++;
@@ -204,7 +236,11 @@ public final class ExpressionParser {
         }
     }
 
-    private void expect(char ch) {
-        if (pos < expr.length() && expr.charAt(pos) == ch) pos++;
+    private void expect(char ch) throws ArithmeticException {
+        skipWS();
+        if (pos >= expr.length() || expr.charAt(pos) != ch) {
+            throw new ArithmeticException("Expected '" + ch + "' at position " + pos);
+        }
+        pos++;
     }
 }

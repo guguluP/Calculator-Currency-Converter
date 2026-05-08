@@ -1,3 +1,7 @@
+// ═════════════════════════════════════════════════════════════════════
+// FIXED IconManager.java
+// ═════════════════════════════════════════════════════════════════════
+
 package Project.ui;
 
 import javax.swing.*;
@@ -12,9 +16,9 @@ public final class IconManager {
     public static void setAppIcon(JFrame frame) {
         java.util.List<Image> icons = new java.util.ArrayList<>();
 
-        // 1. Try as resource in the classpath root
+        // 1. Try as resource in the same package (AppIcon.png in Project/)
         try {
-            URL url = IconManager.class.getResource("/AppIcon.png");
+            URL url = IconManager.class.getResource("../AppIcon.png");
             if (url != null) {
                 Image img = Toolkit.getDefaultToolkit().getImage(url);
                 icons.add(img);
@@ -22,16 +26,16 @@ public final class IconManager {
             }
         } catch (Exception ignored) {}
 
-        // 2. Try the PNG file in the project directory
+        // 2. Try the PNG file in the current directory
         try {
             File pngFile = new File("AppIcon.png");
             if (pngFile.exists()) {
                 Image img = Toolkit.getDefaultToolkit().getImage(pngFile.getAbsolutePath());
                 icons.add(img);
-                System.out.println("✅ Loaded AppIcon.png from project directory");
+                System.out.println("✅ Loaded AppIcon.png from current directory");
             }
         } catch (Exception e) {
-            System.err.println("Failed to load from project directory: " + e.getMessage());
+            System.err.println("Failed to load from current directory: " + e.getMessage());
         }
 
         // 3. Try .icns as backup
@@ -44,23 +48,20 @@ public final class IconManager {
             }
         } catch (Exception ignored) {}
 
-        // 4. Use high-quality fallback if nothing loaded
-        if (icons.isEmpty()) {
-            icons.add(createHighQualityIcon());
-            System.out.println("⚠️ Using programmatic fallback icon");
-        }
-
         // Set multiple sizes for best compatibility
-        frame.setIconImages(icons);
+        if (!icons.isEmpty()) {
+            frame.setIconImages(icons);
 
-        // Force refresh on some platforms
-        if (frame.getIconImage() == null && !icons.isEmpty()) {
-            frame.setIconImage(icons.get(0));
-        }
-
-        // Set taskbar/dock icon for better visibility in IDEs like IntelliJ
-        if (Taskbar.isTaskbarSupported() && !icons.isEmpty()) {
-            Taskbar.getTaskbar().setIconImage(icons.get(0));
+            // Set taskbar/dock icon for better visibility
+            if (Taskbar.isTaskbarSupported()) {
+                try {
+                    Taskbar.getTaskbar().setIconImage(icons.get(0));
+                } catch (Exception ignored) {}
+            }
+        } else {
+            // Fallback: Generate a basic icon if none found
+            System.out.println("⚠️  No AppIcon found, generating fallback icon");
+            frame.setIconImage(createHighQualityIcon());
         }
     }
 
@@ -71,13 +72,16 @@ public final class IconManager {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
+        // Background rounded rect
         g.setColor(new Color(30, 30, 42));
         g.fillRoundRect(20, 20, size - 40, size - 40, 60, 60);
 
+        // Border
         g.setColor(UITheme.ACCENT_AMBER);
         g.setStroke(new BasicStroke(20));
         g.drawRoundRect(45, 45, size - 90, size - 90, 40, 40);
 
+        // Equals symbol
         g.setColor(Color.WHITE);
         g.setFont(new Font("Segoe UI", Font.BOLD, 140));
         FontMetrics fm = g.getFontMetrics();

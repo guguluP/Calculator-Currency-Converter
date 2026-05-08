@@ -1,4 +1,3 @@
-
 package Project;
 
 import javax.swing.*;
@@ -7,12 +6,13 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.event.*;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
-import java.awt.Taskbar;
 import java.io.*;
 import java.net.*;
 import java.sql.*;
+import java.math.BigInteger;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
@@ -27,41 +27,45 @@ import Project.ui.GlassButton;
 import Project.ui.ScalingDisplay;
 import Project.ui.Toast;
 import Project.ui.IconManager;
+import Project.ui.SetupWizard;
+import Project.ui.ButtonFactory;
+import Project.ui.KeyboardHandler;
+import Project.ui.HistoryManager;
+import Project.engine.CalculatorEngine;
+import Project.config.AppConfig;
 
 public class GlassCalculator extends JFrame {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // ═══════════════════════════════════════════════════════════════════
     //  FIELDS
     // ═══════════════════════════════════════════════════════════════════
-    private final DBManager db;
-    private final CurrencyService fx = new CurrencyService();
+    private DBManager db;
+    private CurrencyService fx;
 
     private final ScalingDisplay display = new ScalingDisplay();
     private JPanel buttonPanel;
+    private JPanel header;
+    private JPanel statusBar;
     private CardLayout cardLayout;
     private JPanel mainCardPanel;
 
-    private JLabel statusDB, statusAngle, statusMem;
+    private JLabel statusDB, statusAngle, statusMem, statusStorage;
     private JLabel modeLabel;
+
+    // Currency panel components
+    private ScalingDisplay inputFld;
+    private JLabel resultLbl;
+    private JLabel statusLbl;
+    private JComboBox<String> fromBox, toBox;
+    private Runnable commitHistory;
 
     private final String[] CURRENCIES = {
             "USD", "EUR", "INR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "RUB",
             "BRL", "ZAR", "MXN", "SGD", "HKD", "SEK", "NOK", "DKK", "KRW", "TRY"
     };
+
+    private final List<String> favoriteCurrencies = new ArrayList<>();
+    private JPanel favoritesPanel;
 
     private boolean startNewInput = true;
     private boolean radianMode = false;
@@ -80,30 +84,41 @@ public class GlassCalculator extends JFrame {
 
     private final Map<String, GlassButton> buttonMap = new HashMap<>();
 
+    private boolean commitFlag;
+
     // ═══════════════════════════════════════════════════════════════════
     //  CONSTRUCTOR
     // ═══════════════════════════════════════════════════════════════════
     public GlassCalculator() {
         super("GlassCalc");
+
+        // Check for first run setup
+        if (AppConfig.isFirstRun() || !AppConfig.isSetupComplete()) {
+            SetupWizard wizard = new SetupWizard(this);
+            wizard.setVisible(true);
+        }
+
         Preferences prefs = Preferences.userNodeForPackage(GlassCalculator.class);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setLayout(new BorderLayout());
-        getContentPane().setBackground(UITheme.BG_DEEP);
+        getContentPane().setBackground(UITheme.BG_DEEP());
 
         IconManager.setAppIcon(this);
         db = new DBManager(this);
         db.init();
+        fx = new CurrencyService();
 
-        JPanel header = buildHeader();
+        header = buildHeader();
         buttonPanel = new JPanel();
-        buttonPanel.setBackground(UITheme.BG_DEEP);
-        buttonPanel.setBorder(new EmptyBorder(8, 10, 10, 10));
+        buttonPanel.setBackground(UITheme.BG_DEEP());
+        int borderInset = Math.max(8, (int)(10 * getDPIScale()));
+        buttonPanel.setBorder(new EmptyBorder(borderInset, borderInset, borderInset, borderInset));
         rebuildButtons();
 
-        JPanel statusBar = buildStatusBar();
+        statusBar = buildStatusBar();
 
-        JPanel calcCard = new JPanel(new BorderLayout(0, 4));
-        calcCard.setBackground(UITheme.BG_DEEP);
+        JPanel calcCard = new JPanel(new BorderLayout(0, 6));
+        calcCard.setBackground(UITheme.BG_DEEP());
         calcCard.add(header, BorderLayout.NORTH);
         calcCard.add(buttonPanel, BorderLayout.CENTER);
         calcCard.add(statusBar, BorderLayout.SOUTH);
@@ -148,12 +163,12 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     private JPanel buildHeader() {
         JPanel h = new JPanel(new BorderLayout());
-        h.setBackground(UITheme.BG_DEEP);
-        h.setBorder(new EmptyBorder(10, 12, 6, 6));
+        h.setBackground(UITheme.BG_DEEP());
+        h.setBorder(new EmptyBorder(12, 16, 8, 8));
 
         modeLabel = new JLabel("Calculator", SwingConstants.CENTER);
         modeLabel.setFont(UITheme.FONT_LABEL);
-        modeLabel.setForeground(UITheme.TEXT_DIM);
+        modeLabel.setForeground(UITheme.TEXT_DIM());
 
         GlassButton menuBtn = new GlassButton("≡");
         menuBtn.setFont(new Font("Segoe UI", Font.BOLD, 32));
@@ -176,59 +191,50 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     private JPanel buildStatusBar() {
         JPanel bar = new JPanel(new BorderLayout());
-        bar.setBackground(UITheme.BG_SURFACE);
-        bar.setBorder(new EmptyBorder(4, 14, 4, 14));
+        bar.setBackground(UITheme.BG_SURFACE());
+        bar.setBorder(new EmptyBorder(6, 16, 6, 16));
 
         statusDB = makeStatusLabel("● DB", UITheme.ACCENT_RED);
-        statusAngle = makeStatusLabel("DEG", UITheme.TEXT_DIM);
-        statusMem = makeStatusLabel("M: 0", UITheme.TEXT_DIM);
+        statusAngle = makeStatusLabel("DEG", UITheme.TEXT_DIM());
+        statusMem = makeStatusLabel("M: 0", UITheme.TEXT_DIM());
 
         // New DB + Preferences status
-        JLabel statusStorage = new JLabel("💾 DB + Prefs");
+        statusStorage = new JLabel("💾 DB + Prefs");
         statusStorage.setFont(UITheme.FONT_STATUS);
-        statusStorage.setForeground(UITheme.ACCENT_GREEN);
+        statusStorage.setForeground(UITheme.TEXT_DIM());
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
-        left.setOpaque(false);
-        right.setOpaque(false);
+        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 0));
+        statusPanel.setOpaque(false);
+        statusPanel.add(statusDB);
+        statusPanel.add(statusAngle);
+        statusPanel.add(statusMem);
+        statusPanel.add(new JSeparator(JSeparator.VERTICAL) {
+            {
+                setPreferredSize(new Dimension(1, 16));
+                setForeground(UITheme.TEXT_DIM());
+            }
+        });
+        statusPanel.add(statusStorage);
 
-        left.add(statusDB);
-        left.add(statusStorage);           // ← New
-
-        right.add(statusMem);
-        right.add(statusAngle);
-
-        bar.add(left, BorderLayout.WEST);
-        bar.add(right, BorderLayout.EAST);
+        bar.add(statusPanel, BorderLayout.WEST);
         return bar;
     }
 
     private JLabel makeStatusLabel(String text, Color color) {
-        JLabel l = new JLabel(text);
-        l.setFont(UITheme.FONT_STATUS);
-        l.setForeground(color);
-        return l;
+        JLabel lbl = new JLabel(text);
+        lbl.setFont(UITheme.FONT_STATUS);
+        lbl.setForeground(color);
+        return lbl;
     }
 
-    public void refreshStatusBar() {
-        if (statusDB != null) {
-            boolean ok = db.isReady();
-            statusDB.setText(ok ? "● DB" : "○ DB");
-            statusDB.setForeground(ok ? UITheme.ACCENT_GREEN : UITheme.ACCENT_RED);
-        }
-        if (statusAngle != null) statusAngle.setText("∠ " + (radianMode ? "RAD" : "DEG"));
-        if (statusMem != null) statusMem.setText("💾 M: " + fmt(memory));
-    }
-
-    // ─────────────────────────────────────────────────────────────────
+     // ─────────────────────────────────────────────────────────────────
     //  HAMBURGER MENU POPUP
     // ─────────────────────────────────────────────────────────────────
     private void showMenu(Component anchor) {
         JPopupMenu m = new JPopupMenu();
-        m.setBackground(UITheme.BG_ELEVATED);
+        m.setBackground(UITheme.BG_ELEVATED());
         m.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UITheme.GLASS_BORDER, 1),
+                BorderFactory.createLineBorder(UITheme.GLASS_BORDER(), 1),
                 new EmptyBorder(8, 6, 8, 6)));
 
         addStyledMenuItem(m, currentMode == Mode.BASIC ? "✓ Basic Mode" : "Basic Mode",
@@ -243,6 +249,51 @@ public class GlassCalculator extends JFrame {
         });
         addStyledMenuItem(m, "History", this::openHistoryPanel);
         m.addSeparator();
+
+        // Theme selection submenu
+        JMenu themeMenu = new JMenu("Theme");
+        themeMenu.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        themeMenu.setBackground(UITheme.BG_ELEVATED());
+        themeMenu.setForeground(UITheme.TEXT_PRIMARY());
+
+        ButtonGroup themeGroup = new ButtonGroup();
+        JRadioButtonMenuItem darkItem = new JRadioButtonMenuItem("Dark Mode");
+        JRadioButtonMenuItem lightItem = new JRadioButtonMenuItem("Light Mode");
+        JRadioButtonMenuItem systemItem = new JRadioButtonMenuItem("System Default");
+
+        darkItem.setSelected(UITheme.getThemeMode() == UITheme.ThemeMode.DARK);
+        lightItem.setSelected(UITheme.getThemeMode() == UITheme.ThemeMode.LIGHT);
+        systemItem.setSelected(UITheme.getThemeMode() == UITheme.ThemeMode.SYSTEM);
+
+        darkItem.addActionListener(e -> {
+            UITheme.setThemeMode(UITheme.ThemeMode.DARK);
+            refreshTheme();
+        });
+        lightItem.addActionListener(e -> {
+            UITheme.setThemeMode(UITheme.ThemeMode.LIGHT);
+            refreshTheme();
+        });
+        systemItem.addActionListener(e -> {
+            UITheme.setThemeMode(UITheme.ThemeMode.SYSTEM);
+            refreshTheme();
+        });
+
+        themeGroup.add(darkItem);
+        themeGroup.add(lightItem);
+        themeGroup.add(systemItem);
+
+        themeMenu.add(darkItem);
+        themeMenu.add(lightItem);
+        themeMenu.add(systemItem);
+        m.add(themeMenu);
+
+        m.addSeparator();
+
+        // ✅ NEW: Individual reconfiguration options
+        addStyledMenuItem(m, "🔧 Reconfigure Database", this::showDatabaseConfigDialog);
+        addStyledMenuItem(m, "🔑 Configure API Key", this::showApiConfigDialog);
+
+        addStyledMenuItem(m, "Settings", this::showSettings);
         addStyledMenuItem(m, "About", this::showAbout);
         addStyledMenuItem(m, "Keyboard Shortcuts", this::showKeyboardHelp);
 
@@ -257,11 +308,200 @@ public class GlassCalculator extends JFrame {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    //  DATABASE CONFIG DIALOG
+    // ─────────────────────────────────────────────────────────────────
+    private void showDatabaseConfigDialog() {
+        JDialog dialog = new JDialog(this, "Database Configuration", true);
+        dialog.setSize(400, 350);
+        dialog.setLocationRelativeTo(this);
+        dialog.getContentPane().setBackground(UITheme.BG_DEEP());
+        dialog.setLayout(new BorderLayout());
+
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBackground(UITheme.BG_DEEP());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 0, 8, 15);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        // Database Type
+        gbc.gridx = 0; gbc.gridy = 0;
+        formPanel.add(createLabel("Database Type:"), gbc);
+        gbc.gridx = 1;
+        JComboBox<String> dbTypeCombo = new JComboBox<>(new String[]{"MySQL", "SQLite", "PostgreSQL"});
+        dbTypeCombo.setBackground(UITheme.BG_ELEVATED());
+        dbTypeCombo.setForeground(UITheme.TEXT_PRIMARY());
+        dbTypeCombo.setPreferredSize(new Dimension(150, 32));
+        dbTypeCombo.setSelectedItem(AppConfig.getDatabaseType());
+        formPanel.add(dbTypeCombo, gbc);
+
+        // Host
+        gbc.gridx = 0; gbc.gridy = 1;
+        formPanel.add(createLabel("Host:"), gbc);
+        gbc.gridx = 1;
+        JTextField dbHostField = createTextField(AppConfig.getDatabaseHost());
+        formPanel.add(dbHostField, gbc);
+
+        // Port
+        gbc.gridx = 0; gbc.gridy = 2;
+        formPanel.add(createLabel("Port:"), gbc);
+        gbc.gridx = 1;
+        JTextField dbPortField = createTextField(String.valueOf(AppConfig.getDatabasePort()));
+        formPanel.add(dbPortField, gbc);
+
+        // Username
+        gbc.gridx = 0; gbc.gridy = 3;
+        formPanel.add(createLabel("Username:"), gbc);
+        gbc.gridx = 1;
+        JTextField dbUserField = createTextField(AppConfig.getDatabaseUser());
+        formPanel.add(dbUserField, gbc);
+
+        // Password
+        gbc.gridx = 0; gbc.gridy = 4;
+        formPanel.add(createLabel("Password:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField dbPasswordField = new JPasswordField(AppConfig.getDatabasePassword());
+        dbPasswordField.setBackground(UITheme.BG_ELEVATED());
+        dbPasswordField.setForeground(UITheme.TEXT_PRIMARY());
+        dbPasswordField.setPreferredSize(new Dimension(150, 32));
+        dbPasswordField.setBorder(BorderFactory.createLineBorder(UITheme.GLASS_BORDER()));
+        formPanel.add(dbPasswordField, gbc);
+
+        // Database Name
+        gbc.gridx = 0; gbc.gridy = 5;
+        formPanel.add(createLabel("Database Name:"), gbc);
+        gbc.gridx = 1;
+        JTextField dbNameField = createTextField(AppConfig.getDatabaseName());
+        formPanel.add(dbNameField, gbc);
+
+        JScrollPane scrollPane = new JScrollPane(formPanel);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.setBorder(null);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(UITheme.BG_DEEP());
+        GlassButton saveBtn = new GlassButton("Save");
+        saveBtn.setForeground(UITheme.ACCENT_GREEN);
+        saveBtn.addActionListener(e -> {
+            try {
+                String dbType = (String) dbTypeCombo.getSelectedItem();
+                String host = dbHostField.getText().trim();
+                int port = Integer.parseInt(dbPortField.getText().trim());
+                String username = dbUserField.getText().trim();
+                String password = new String(dbPasswordField.getPassword());
+                String dbName = dbNameField.getText().trim();
+
+                AppConfig.setDatabaseConfig(dbType, host, port, username, password, dbName);
+                toast("Database configuration saved ✓");
+
+                // Reinitialize DB
+                if (db != null) {
+                    db.shutdown();
+                }
+                db = new DBManager(this);
+                db.init();
+
+                dialog.dispose();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dialog, "Invalid port number", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        GlassButton cancelBtn = new GlassButton("Cancel");
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(saveBtn);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
+    }
+
+    private JLabel createLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        label.setForeground(UITheme.TEXT_PRIMARY());
+        return label;
+    }
+
+    private JTextField createTextField(String defaultText) {
+        JTextField field = new JTextField(defaultText);
+        field.setBackground(UITheme.BG_ELEVATED());
+        field.setForeground(UITheme.TEXT_PRIMARY());
+        field.setPreferredSize(new Dimension(150, 32));
+        field.setBorder(BorderFactory.createLineBorder(UITheme.GLASS_BORDER()));
+        return field;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  API CONFIG DIALOG
+    // ─────────────────────────────────────────────────────────────────
+    private void showApiConfigDialog() {
+        JDialog dialog = new JDialog(this, "API Configuration", true);
+        dialog.setSize(400, 200);
+        dialog.setLocationRelativeTo(this);
+        dialog.getContentPane().setBackground(UITheme.BG_DEEP());
+        dialog.setLayout(new BorderLayout());
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(UITheme.BG_DEEP());
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+
+        JTextArea descArea = new JTextArea(
+            "Enter your Exchange Rate API key:\n\n" +
+            "• Get free key from: https://www.exchangerate-api.com\n" +
+            "• Leave empty to disable currency conversion"
+        );
+        descArea.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        descArea.setForeground(UITheme.TEXT_PRIMARY());
+        descArea.setOpaque(false);
+        descArea.setEditable(false);
+        descArea.setLineWrap(true);
+        descArea.setWrapStyleWord(true);
+
+        JPasswordField apiKeyField = new JPasswordField(AppConfig.getApiKey());
+        apiKeyField.setBackground(UITheme.BG_ELEVATED());
+        apiKeyField.setForeground(UITheme.TEXT_PRIMARY());
+        apiKeyField.setPreferredSize(new Dimension(200, 32));
+        apiKeyField.setBorder(BorderFactory.createLineBorder(UITheme.GLASS_BORDER()));
+
+        panel.add(descArea, BorderLayout.NORTH);
+        panel.add(apiKeyField, BorderLayout.CENTER);
+
+        dialog.add(panel, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBackground(UITheme.BG_DEEP());
+        GlassButton saveBtn = new GlassButton("Save");
+        saveBtn.setForeground(UITheme.ACCENT_GREEN);
+        saveBtn.addActionListener(e -> {
+            String apiKey = new String(apiKeyField.getPassword()).trim();
+            AppConfig.setApiKey(apiKey);
+            if (apiKey.isEmpty()) {
+                fx = new CurrencyService(); // Recreate to disable API
+                toast("Currency API disabled");
+            } else {
+                fx.configureApiKey(apiKey);
+                toast("API key updated ✓");
+            }
+            dialog.dispose();
+        });
+        GlassButton cancelBtn = new GlassButton("Cancel");
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(saveBtn);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
+    }
+
     private void addStyledMenuItem(JPopupMenu m, String text, Runnable action) {
         JMenuItem item = new JMenuItem(text);
         item.setFont(new Font("Segoe UI", Font.PLAIN, 16));
-        item.setBackground(UITheme.BG_ELEVATED);
-        item.setForeground(UITheme.TEXT_PRIMARY);
+        item.setBackground(UITheme.BG_ELEVATED());
+        item.setForeground(UITheme.TEXT_PRIMARY());
         item.setBorder(new EmptyBorder(8, 16, 8, 16));
         item.addActionListener(e -> action.run());
         m.add(item);
@@ -282,7 +522,8 @@ public class GlassCalculator extends JFrame {
     }
 
     private void buildBasicButtons() {
-        buttonPanel.setLayout(new GridLayout(5, 4, 8, 8));
+        int gap = Math.max(6, (int)(8 * getDPIScale()));
+        buttonPanel.setLayout(new GridLayout(5, 4, gap, gap));
         String[][] layout = {{"AC", "C", "%", "÷"}, {"7", "8", "9", "×"}, {"4", "5", "6", "−"}, {"1", "2", "3", "+"}, {"0", ".", "±", "="}};
         for (String[] row : layout) {
             for (String t : row) {
@@ -294,7 +535,8 @@ public class GlassCalculator extends JFrame {
     }
 
     private void buildScientificButtons() {
-        buttonPanel.setLayout(new GridLayout(5, 10, 6, 6));
+        int gap = Math.max(4, (int)(6 * getDPIScale()));
+        buttonPanel.setLayout(new GridLayout(5, 10, gap, gap));
         String s = inverseMode ? "sin⁻¹" : "sin";
         String co = inverseMode ? "cos⁻¹" : "cos";
         String ta = inverseMode ? "tan⁻¹" : "tan";
@@ -323,7 +565,7 @@ public class GlassCalculator extends JFrame {
         GlassButton btn = new GlassButton(text);
 
         if ("÷×−+=".contains(text)) btn.setForeground(UITheme.ACCENT_AMBER);
-        else if ("AC C ⌫".contains(text)) btn.setForeground(UITheme.TEXT_DIM);
+        else if ("AC C ⌫".contains(text)) btn.setForeground(UITheme.TEXT_DIM());
         else if (isSciToken(text)) btn.setForeground(UITheme.ACCENT_CYAN);
 
         // Tooltips for scientific functions
@@ -332,6 +574,13 @@ public class GlassCalculator extends JFrame {
 
         btn.addActionListener(this::onButtonAction);
         return btn;
+    }
+
+    public void highlightButton(String text) {
+        GlassButton btn = buttonMap.get(text);
+        if (btn != null) {
+            btn.triggerRipple();
+        }
     }
 
     private String getTooltip(String t) {
@@ -402,24 +651,64 @@ public class GlassCalculator extends JFrame {
         dispatch(((JButton) e.getSource()).getText());
     }
 
-    private void dispatch(String cmd) {
+    public void dispatch(String cmd) {
         switch (cmd) {
             case "AC" -> reset();
             case "C", "⌫" -> backspace();
             case "%" -> percent();
             case "±", "+/-" -> negate();
             case "=" -> evaluate();
-            case "x²" -> insert("^2");
-            case "x³" -> insert("^3");
-            case "xʸ", "yˣ" -> insert("^");
-            case "2ˣ" -> insert("2^");
-            case "1/x" -> insert("1/(");
-            case "²√x" -> insert("√(");
-            case "³√x" -> insert("cbrt(");
-            case "ʸ√x" -> insert("^(1/");
-            case "logy" -> insert("log(");
-            case "log₂" -> insert("log2(");
-            case "x!" -> factorial();
+             case "x²" -> {
+                 try {
+                     double v = eval(display.getText());
+                     display.setText(fmt(v * v));
+                     startNewInput = true;
+                 } catch (Exception ignored) {
+                     display.setText("Error");
+                 }
+             }
+             case "x³" -> {
+                 try {
+                     double v = eval(display.getText());
+                     display.setText(fmt(v * v * v));
+                     startNewInput = true;
+                 } catch (Exception ignored) {
+                     display.setText("Error");
+                 }
+             }
+             case "xʸ", "yˣ" -> insert("^");
+             case "2ˣ" -> insert("2^");
+             case "1/x" -> {
+                 try {
+                     double v = eval(display.getText());
+                     display.setText(fmt(1.0 / v));
+                     startNewInput = true;
+                 } catch (Exception ignored) {
+                     display.setText("Error");
+                 }
+             }
+             case "²√x" -> {
+                 try {
+                     double v = eval(display.getText());
+                     display.setText(fmt(Math.sqrt(v)));
+                     startNewInput = true;
+                 } catch (Exception ignored) {
+                     display.setText("Error");
+                 }
+             }
+             case "³√x" -> {
+                 try {
+                     double v = eval(display.getText());
+                     display.setText(fmt(Math.cbrt(v)));
+                     startNewInput = true;
+                 } catch (Exception ignored) {
+                     display.setText("Error");
+                 }
+             }
+             case "ʸ√x" -> insert("^(1/");
+             case "logy" -> insert("log(");
+             case "log₂" -> insert("log2(");
+             case "x!" -> factorial();
             case "(" -> insert("(");
             case ")" -> insert(")");
             case "mc" -> {
@@ -427,22 +716,24 @@ public class GlassCalculator extends JFrame {
                 refreshStatusBar();
                 toast("Memory cleared");
             }
-            case "m+" -> {
-                try {
-                    memory += eval(display.getText());
-                    refreshStatusBar();
-                    toast("Added to memory");
-                } catch (Exception ignored) {
-                }
-            }
-            case "m-" -> {
-                try {
-                    memory -= eval(display.getText());
-                    refreshStatusBar();
-                    toast("Subtracted from memory");
-                } catch (Exception ignored) {
-                }
-            }
+             case "m+" -> {
+                 try {
+                     memory += eval(display.getText());
+                     refreshStatusBar();
+                     toast("Added to memory");
+                 } catch (Exception ignored) {
+                     toast("Invalid expression");
+                 }
+             }
+             case "m-" -> {
+                 try {
+                     memory -= eval(display.getText());
+                     refreshStatusBar();
+                     toast("Subtracted from memory");
+                 } catch (Exception ignored) {
+                     toast("Invalid expression");
+                 }
+             }
             case "mr" -> insert(fmt(memory));
             case "e" -> insert(String.valueOf(Math.E));
             case "EE" -> insert("E");
@@ -473,7 +764,7 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     //  INPUT HELPERS
     // ─────────────────────────────────────────────────────────────────
-    private void insert(String text) {
+    public void insert(String text) {
         String cur = display.getText();
         int caret = display.getCaretPosition();
 
@@ -484,13 +775,22 @@ public class GlassCalculator extends JFrame {
             return;
         }
 
-        // If inserting an operator right after another, replace it
+        // If inserting an operator, replace the last operator before caret
         if (text.length() == 1 && "÷×−+".contains(text) && caret > 0) {
-            char prev = cur.charAt(caret - 1);
-            if ("÷×−+".indexOf(prev) >= 0) {
-                String n = cur.substring(0, caret - 1) + text + cur.substring(caret);
+            String before = cur.substring(0, caret);
+            int lastOpIndex = -1;
+            for (int i = before.length() - 1; i >= 0; i--) {
+                char ch = before.charAt(i);
+                if ("÷×−+".indexOf(ch) >= 0) {
+                    lastOpIndex = i;
+                    break;
+                }
+            }
+            if (lastOpIndex >= 0) {
+                // Replace the operator at lastOpIndex; preserve everything else
+                String n = cur.substring(0, lastOpIndex) + text + cur.substring(lastOpIndex + 1);
                 display.setText(n);
-                display.setCaretPosition(caret);
+                display.setCaretPosition(lastOpIndex + 1);
                 return;
             }
         }
@@ -535,13 +835,15 @@ public class GlassCalculator extends JFrame {
     private void factorial() {
         try {
             double n = Double.parseDouble(display.getText().trim());
-            if (n < 0 || n > 20 || n != (long) n) {
+            if (n < 0 || n > 170 || n != (long) n) {
                 display.setText("Error");
                 return;
             }
-            long r = 1;
-            for (long i = 2; i <= (long) n; i++) r *= i;
-            display.setText(String.valueOf(r));
+            BigInteger r = BigInteger.ONE;
+            for (long i = 2; i <= (long) n; i++) {
+                r = r.multiply(BigInteger.valueOf(i));
+            }
+            display.setText(r.toString());
             startNewInput = true;
         } catch (Exception e) {
             display.setText("Error");
@@ -550,7 +852,9 @@ public class GlassCalculator extends JFrame {
 
     private boolean isValidExpression(String expr) {
         if (expr.length() > 1000) return false; // Prevent DoS
-        return expr.matches("[0-9a-zA-Z.+\\-*/^()√πe\\s]+");
+        // Must include Unicode button operators ×, ÷, − alongside ASCII ones;
+        // without them every on-screen-button expression is rejected before parsing.
+        return expr.matches("[0-9a-zA-Z.+\\-*/^()√πe×÷−,\\s]+");
     }
 
     private void evaluate() {
@@ -567,7 +871,7 @@ public class GlassCalculator extends JFrame {
             
             String entry = cur + " = " + fmtResult;
             addCalculationToHistory(entry);           // ← Changed
-            db.saveAsync(cur, fmtResult);
+            db.saveAsync(cur, fmtResult, "calc");
             // Extract for repeat operator (pressing = again)
             extractLastOp(cur);
             repeatPossible = true;
@@ -582,15 +886,19 @@ public class GlassCalculator extends JFrame {
         String c = expr.replace("×", "*").replace("÷", "/").replace("−", "-");
         lastOperator = "";
         lastOperand = 0;
-        for (int i = c.length() - 1; i > 0; i--) {
+        int lastOpIndex = -1;
+        for (int i = c.length() - 1; i >= 0; i--) {
             char ch = c.charAt(i);
             if ("+-*/^".indexOf(ch) >= 0) {
-                try {
-                    lastOperand = Double.parseDouble(c.substring(i + 1));
-                    lastOperator = String.valueOf(ch);
-                } catch (Exception ignored) {
-                }
-                return;
+                lastOpIndex = i;
+                break;
+            }
+        }
+        if (lastOpIndex >= 0) {
+            try {
+                lastOperand = Double.parseDouble(c.substring(lastOpIndex + 1));
+                lastOperator = String.valueOf(c.charAt(lastOpIndex));
+            } catch (Exception ignored) {
             }
         }
     }
@@ -621,11 +929,12 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     private void addToHistory(String entry, boolean isConversion) {
         List<String> target = isConversion ? convHistory : calcHistory;
-        
+
         if (target.contains(entry)) return; // avoid duplicates
-        
+
         target.add(0, entry);
         if (target.size() > 100) target.remove(target.size() - 1);
+        saveHistoryToPrefs(); // Save immediately to ensure persistence
     }
 
     private void addCalculationToHistory(String entry) {
@@ -638,7 +947,7 @@ public class GlassCalculator extends JFrame {
 
     private void loadHistoryFromPrefs() {
         Preferences p = Preferences.userNodeForPackage(GlassCalculator.class);
-        
+
         // Load Calculation History
         int nCalc = p.getInt("histCalcN", 0);
         calcHistory.clear();
@@ -654,22 +963,41 @@ public class GlassCalculator extends JFrame {
             String e = p.get("histConv_" + i, null);
             if (e != null) convHistory.add(e);
         }
+
+        // Load Favorite Currencies
+        String favStr = p.get("favCurrencies", "USD,EUR,INR,GBP,JPY");
+        favoriteCurrencies.clear();
+        for (String curr : favStr.split(",")) {
+            if (!curr.trim().isEmpty()) {
+                favoriteCurrencies.add(curr.trim());
+            }
+        }
     }
 
     private void saveHistoryToPrefs() {
         Preferences p = Preferences.userNodeForPackage(GlassCalculator.class);
-        
+
         // Save Calculation History
         p.putInt("histCalcN", calcHistory.size());
         for (int i = 0; i < calcHistory.size(); i++) {
             p.put("histCalc_" + i, calcHistory.get(i));
         }
-        
+
         // Save Conversion History
         p.putInt("histConvN", convHistory.size());
         for (int i = 0; i < convHistory.size(); i++) {
             p.put("histConv_" + i, convHistory.get(i));
         }
+
+        // Save Favorite Currencies
+        p.put("favCurrencies", String.join(",", favoriteCurrencies));
+    }
+
+    public void clearHistory() {
+        calcHistory.clear();
+        convHistory.clear();
+        saveHistoryToPrefs();
+        db.clearHistory();
     }
 
     private void reset() {
@@ -687,7 +1015,7 @@ public class GlassCalculator extends JFrame {
         JDialog dlg = new JDialog(this, "History", true);
         dlg.setSize(580, 650);
         dlg.setLocationRelativeTo(this);
-        dlg.getContentPane().setBackground(UITheme.BG_DEEP);
+        dlg.getContentPane().setBackground(UITheme.BG_DEEP());
 
         JLabel title = new JLabel("History", SwingConstants.CENTER);
         title.setFont(new Font("Segoe UI", Font.BOLD, 26));
@@ -695,8 +1023,8 @@ public class GlassCalculator extends JFrame {
         title.setBorder(new EmptyBorder(16, 0, 8, 0));
 
         JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.setBackground(UITheme.BG_DEEP);
-        tabbedPane.setForeground(UITheme.TEXT_PRIMARY);
+        tabbedPane.setBackground(UITheme.BG_DEEP());
+        tabbedPane.setForeground(UITheme.TEXT_PRIMARY());
         tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 14));
 
         // Calculations Tab
@@ -711,11 +1039,11 @@ public class GlassCalculator extends JFrame {
         JLabel storageInfo = new JLabel("💾 All entries are saved in:  Preferences  +  MySQL Database",
                                        SwingConstants.CENTER);
         storageInfo.setFont(UITheme.FONT_STATUS);
-        storageInfo.setForeground(UITheme.TEXT_DIM);
+        storageInfo.setForeground(UITheme.TEXT_DIM());
         storageInfo.setBorder(new EmptyBorder(8, 0, 8, 0));
 
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 12));
-        btnPanel.setBackground(UITheme.BG_DEEP);
+        btnPanel.setBackground(UITheme.BG_DEEP());
 
         JButton clearCalcBtn = styledDialogBtn("Clear Calculations", new Color(255, 100, 100));
         JButton clearConvBtn = styledDialogBtn("Clear Conversions", new Color(255, 100, 100));
@@ -727,6 +1055,7 @@ public class GlassCalculator extends JFrame {
                 "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 calcHistory.clear();
                 saveHistoryToPrefs();
+                db.clearHistory(); // Clear from database too
                 refreshHistoryTabs(tabbedPane);
             }
         });
@@ -746,6 +1075,7 @@ public class GlassCalculator extends JFrame {
                 calcHistory.clear();
                 convHistory.clear();
                 saveHistoryToPrefs();
+                db.clearHistory(); // Clear from database too
                 refreshHistoryTabs(tabbedPane);
             }
         });
@@ -758,7 +1088,7 @@ public class GlassCalculator extends JFrame {
         btnPanel.add(closeBtn);
 
         JPanel content = new JPanel(new BorderLayout());
-        content.setBackground(UITheme.BG_DEEP);
+        content.setBackground(UITheme.BG_DEEP());
         content.add(title, BorderLayout.NORTH);
         content.add(tabbedPane, BorderLayout.CENTER);
         content.add(storageInfo, BorderLayout.SOUTH);
@@ -770,13 +1100,13 @@ public class GlassCalculator extends JFrame {
 
     private JPanel createHistoryTab(List<String> list, String emptyText, String tabName) {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(UITheme.BG_DEEP);
+        panel.setBackground(UITheme.BG_DEEP());
 
         JTextArea area = new JTextArea();
         area.setEditable(false);
         area.setFont(new Font("Segoe UI", Font.PLAIN, 16));
-        area.setBackground(UITheme.BG_SURFACE);
-        area.setForeground(UITheme.TEXT_PRIMARY);
+        area.setBackground(UITheme.BG_SURFACE());
+        area.setForeground(UITheme.TEXT_PRIMARY());
         area.setBorder(new EmptyBorder(16, 20, 16, 20));
         area.setLineWrap(true);
         area.setText(list.isEmpty() ? emptyText : String.join("\n\n", list));
@@ -831,10 +1161,25 @@ public class GlassCalculator extends JFrame {
         JTextArea ta = new JTextArea(help);
         ta.setEditable(false);
         ta.setFont(new Font("Monospaced", Font.PLAIN, 15));
-        ta.setBackground(UITheme.BG_SURFACE);
-        ta.setForeground(UITheme.TEXT_PRIMARY);
+        ta.setBackground(UITheme.BG_SURFACE());
+        ta.setForeground(UITheme.TEXT_PRIMARY());
 
         JOptionPane.showMessageDialog(this, new JScrollPane(ta), "Keyboard Shortcuts", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  SETTINGS DIALOG
+    // ─────────────────────────────────────────────────────────────────
+    private void showSettings() {
+        SetupWizard wizard = new SetupWizard(this);
+        wizard.setVisible(true);
+        // Reinitialize DB and currency service after settings change
+        if (db != null) {
+            db.shutdown();
+        }
+        db = new DBManager(this);
+        db.init();
+        fx = new CurrencyService();
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -855,8 +1200,8 @@ public class GlassCalculator extends JFrame {
         JTextArea ta = new JTextArea(about);
         ta.setEditable(false);
         ta.setFont(new Font("Monospaced", Font.PLAIN, 15));
-        ta.setBackground(UITheme.BG_SURFACE);
-        ta.setForeground(UITheme.TEXT_PRIMARY);
+        ta.setBackground(UITheme.BG_SURFACE());
+        ta.setForeground(UITheme.TEXT_PRIMARY());
 
         JOptionPane.showMessageDialog(this, new JScrollPane(ta), "About GlassCalculator", JOptionPane.PLAIN_MESSAGE);
     }
@@ -866,7 +1211,7 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     private void hookDisplayContextMenu() {
         JPopupMenu ctx = new JPopupMenu();
-        ctx.setBackground(UITheme.BG_ELEVATED);
+        ctx.setBackground(UITheme.BG_ELEVATED());
 
         JMenuItem copy = ctxItem("Copy", () -> {
             display.selectAll();
@@ -910,8 +1255,8 @@ public class GlassCalculator extends JFrame {
     private JMenuItem ctxItem(String label, Runnable action) {
         JMenuItem item = new JMenuItem(label);
         item.setFont(new Font("Segoe UI", Font.PLAIN, 15));
-        item.setBackground(UITheme.BG_ELEVATED);
-        item.setForeground(UITheme.TEXT_PRIMARY);
+        item.setBackground(UITheme.BG_ELEVATED());
+        item.setForeground(UITheme.TEXT_PRIMARY());
         item.setBorder(new EmptyBorder(6, 14, 6, 14));
         item.addActionListener(e -> action.run());
         return item;
@@ -1015,13 +1360,14 @@ public class GlassCalculator extends JFrame {
                 GlassButton btn = buttonMap.get(s);
                 if (btn != null) {
                     btn.triggerRipple();
+                    btn.triggerScale();
                 }
             }
         });
         display.requestFocusInWindow();
     }
 
-    private void pasteFromClipboard() {
+    public void pasteFromClipboard() {
         String clip = getClipboardText();
         if (clip != null && !clip.isBlank()) {
             display.setText(clip.trim());
@@ -1033,7 +1379,7 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     //  TOAST
     // ─────────────────────────────────────────────────────────────────
-    private void toast(String msg) {
+    public void toast(String msg) {
         Toast t = new Toast(this, msg);
         t.show(display.getY());
     }
@@ -1043,20 +1389,20 @@ public class GlassCalculator extends JFrame {
     // ─────────────────────────────────────────────────────────────────
     private JPanel buildCurrencyPanel() {
         JPanel root = new JPanel(new BorderLayout(0, 0));
-        root.setBackground(UITheme.BG_DEEP);
+        root.setBackground(UITheme.BG_DEEP());
 
         // ── Top: display area ────────────────────────────────────────
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
-        top.setBackground(UITheme.BG_DEEP);
+        top.setBackground(UITheme.BG_DEEP());
         top.setBorder(new EmptyBorder(24, 18, 12, 18));
 
         // Result row
-        JLabel resultLbl = new JLabel("0", SwingConstants.RIGHT);
+        resultLbl = new JLabel("0", SwingConstants.RIGHT);
         resultLbl.setFont(UITheme.FONT_DISPLAY);
-        resultLbl.setForeground(UITheme.TEXT_PRIMARY);
+        resultLbl.setForeground(UITheme.TEXT_PRIMARY());
 
-        JComboBox<String> toBox = styledCombo(CURRENCIES);
+        toBox = styledCombo(CURRENCIES);
         toBox.setSelectedItem("INR");
 
         JPanel resultRow = new JPanel(new BorderLayout(10, 0));
@@ -1074,12 +1420,12 @@ public class GlassCalculator extends JFrame {
         swapRow.add(swapBtn);
 
         // Input row
-        ScalingDisplay inputFld = new ScalingDisplay();
+        inputFld = new ScalingDisplay();
         inputFld.setEditable(true);
         inputFld.setText("0");
         inputFld.setCaretColor(UITheme.ACCENT_CYAN);
 
-        JComboBox<String> fromBox = styledCombo(CURRENCIES);
+        fromBox = styledCombo(CURRENCIES);
         fromBox.setSelectedItem("USD");
 
         JPanel inputRow = new JPanel(new BorderLayout(10, 0));
@@ -1087,7 +1433,7 @@ public class GlassCalculator extends JFrame {
         inputRow.add(inputFld, BorderLayout.CENTER);
         inputRow.add(fromBox, BorderLayout.EAST);
 
-        Runnable commitHistory = () -> {
+        commitHistory = () -> {
             String input = inputFld.getText().trim();
             String result = resultLbl.getText().trim();
             String from = (String) fromBox.getSelectedItem();
@@ -1104,13 +1450,13 @@ public class GlassCalculator extends JFrame {
             addConversionToHistory(historyEntry);     // ← Use conversion history
 
             // Save to DB async
-            db.saveAsync(input + " " + from, result + " " + to);
+            db.saveAsync(input + " " + from, result + " " + to, "conv");
 
             toast("Conversion saved to history");
         };
 
         // Status row
-        JLabel statusLbl = new JLabel("Live rates · Ready", SwingConstants.CENTER);
+        statusLbl = new JLabel("Live rates · Ready", SwingConstants.CENTER);
         statusLbl.setFont(UITheme.FONT_STATUS);
         statusLbl.setForeground(UITheme.ACCENT_GREEN);
 
@@ -1132,75 +1478,18 @@ public class GlassCalculator extends JFrame {
         top.add(statusRow);
         root.add(top, BorderLayout.NORTH);
 
+        // ── Favorites panel ─────────────────────────────────────────
+        favoritesPanel = createFavoritesPanel();
+        root.add(favoritesPanel, BorderLayout.CENTER);
+
         // ── Currency keypad ─────────────────────────────────────────
-        JPanel keypad = new JPanel(new GridLayout(5, 4, 10, 10));
-        keypad.setBackground(UITheme.BG_DEEP);
-        keypad.setBorder(new EmptyBorder(8, 18, 24, 18));
+        int keypadGap = Math.max(6, (int)(10 * getDPIScale()));
+        JPanel keypad = new JPanel(new GridLayout(5, 4, keypadGap, keypadGap));
+        keypad.setBackground(UITheme.BG_DEEP());
+        int keypadBorder = Math.max(6, (int)(8 * getDPIScale()));
+        keypad.setBorder(new EmptyBorder(keypadBorder, keypadBorder * 2, keypadBorder * 3, keypadBorder * 2));
 
         // Live convert: debounced to avoid API hammering
-
-        Runnable[] liveRef = {null};
-        Runnable live = () -> {
-            String raw = inputFld.getText().trim();
-            if (raw.isEmpty() || raw.equals("0")) {
-                resultLbl.setText("0");
-                return;
-            }
-            if (!isValidExpression(raw)) {
-                resultLbl.setText("Invalid Input");
-                return;
-            }
-            double amount;
-            try {
-                amount = new ExpressionParser(raw, false).parse();
-            } catch (Exception ex) {
-                try {
-                    amount = Double.parseDouble(raw);
-                } catch (Exception e2) {
-                    return;
-                }
-            }
-
-            String from = (String) fromBox.getSelectedItem();
-            String to = (String) toBox.getSelectedItem();
-            if (from.equals(to)) {
-                resultLbl.setText(fmt(amount));
-                return;
-            }
-
-            final double finalAmount = amount;
-            double rate = fx.rateOrFetch(from, to,
-                    () -> {   // onResult: retry with fresh cache
-                        String f = (String) fromBox.getSelectedItem();
-                        String t2 = (String) toBox.getSelectedItem();
-                        // reuse cached data
-                        double r2 = fx.rateOrFetch(f, t2, () -> {
-                        }, () -> {
-                        });
-                        if (!Double.isNaN(r2)) {
-                            resultLbl.setText(fmt(finalAmount * r2));
-                            statusLbl.setText("Updated: " + fx.lastUpdated(f));
-
-                            // <<< SAVE TO HISTORY >>>
-                            commitHistory.run();
-                        }
-                    },
-                    () -> {
-                        resultLbl.setText("Error");
-                        statusLbl.setText("Network error");
-                    }
-            );
-
-            if (Double.isNaN(rate)) {
-                resultLbl.setText("Fetching...");
-                statusLbl.setText("Connecting...");
-            } else {
-                resultLbl.setText(fmt(finalAmount * rate));
-                statusLbl.setText("Updated: " + fx.lastUpdated(from));
-                commitHistory.run();   // immediate save if rate was cached
-            }
-        };
-        liveRef[0] = live;
 
         // Keypad button actions
         String[] keys = {"⌫", "AC", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−", "1", "2", "3", "+", "+/-", "0", ".", "="};
@@ -1243,13 +1532,14 @@ public class GlassCalculator extends JFrame {
                         } catch (Exception e) {
                             resultLbl.setText("Error");
                         }
+                        doLive(true);
                     }
                     default -> {
                         if (k.matches("[0-9]")) inputFld.setText(cur.equals("0") ? k : cur + k);
                         else if (k.equals(".") && !cur.contains(".")) inputFld.setText(cur + ".");
                     }
                 }
-                fx.debounce(live);
+                fx.debounce(() -> doLive(false));
             });
             keypad.add(btn);
         }
@@ -1259,19 +1549,19 @@ public class GlassCalculator extends JFrame {
             Object f = fromBox.getSelectedItem(), t = toBox.getSelectedItem();
             fromBox.setSelectedItem(t);
             toBox.setSelectedItem(f);
-            fx.debounce(live);
+            fx.debounce(() -> doLive(false));
         });
 
         // fromBox / toBox listeners
-        fromBox.addActionListener(e -> fx.debounce(live));
-        toBox.addActionListener(e -> fx.debounce(live));
+        fromBox.addActionListener(e -> fx.debounce(() -> doLive(false)));
+        toBox.addActionListener(e -> fx.debounce(() -> doLive(false)));
 
         // Keyboard on inputFld
         inputFld.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    live.run();
+                    doLive(false);
                     e.consume();
                 }
                 if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
@@ -1281,15 +1571,114 @@ public class GlassCalculator extends JFrame {
             }
         });
 
-        root.add(keypad, BorderLayout.CENTER);
+        root.add(keypad, BorderLayout.SOUTH);
         return root;
+    }
+
+    private JPanel createFavoritesPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(UITheme.BG_DEEP());
+        panel.setBorder(new EmptyBorder(8, 18, 8, 18));
+
+        // Title with add button
+        JPanel titlePanel = new JPanel(new BorderLayout());
+        titlePanel.setOpaque(false);
+
+        JLabel title = new JLabel("Favorites", SwingConstants.LEFT);
+        title.setFont(UITheme.FONT_LABEL);
+        title.setForeground(UITheme.TEXT_DIM());
+
+        GlassButton addBtn = new GlassButton("+");
+        addBtn.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        addBtn.setForeground(UITheme.ACCENT_GREEN);
+        addBtn.setPreferredSize(new Dimension(40, 40));
+        addBtn.addActionListener(e -> showAddFavoriteDialog());
+
+        titlePanel.add(title, BorderLayout.WEST);
+        titlePanel.add(addBtn, BorderLayout.EAST);
+
+        // Favorites buttons
+        JPanel favButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        favButtons.setOpaque(false);
+        updateFavoritesButtons(favButtons);
+
+        panel.add(titlePanel, BorderLayout.NORTH);
+        panel.add(favButtons, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private void updateFavoritesButtons(JPanel container) {
+        container.removeAll();
+        for (String curr : favoriteCurrencies) {
+            GlassButton btn = new GlassButton(curr);
+            btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            btn.setPreferredSize(new Dimension(60, 35));
+            btn.addActionListener(e -> {
+                // Set as target currency
+                toBox.setSelectedItem(curr);
+                fx.debounce(() -> doLive(false));
+                toast("Set " + curr + " as target");
+            });
+            container.add(btn);
+        }
+        container.revalidate();
+        container.repaint();
+    }
+
+    private void showAddFavoriteDialog() {
+        JDialog dialog = new JDialog(this, "Add Favorite Currency", true);
+        dialog.setSize(300, 150);
+        dialog.setLocationRelativeTo(this);
+        dialog.getContentPane().setBackground(UITheme.BG_DEEP());
+        dialog.setLayout(new BorderLayout());
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(UITheme.BG_DEEP());
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+
+        JComboBox<String> currBox = new JComboBox<>(CURRENCIES);
+        currBox.setBackground(UITheme.BG_ELEVATED());
+        currBox.setForeground(UITheme.TEXT_PRIMARY());
+        currBox.setPreferredSize(new Dimension(150, 32));
+
+        panel.add(new JLabel("Select currency to add to favorites:"), BorderLayout.NORTH);
+        panel.add(currBox, BorderLayout.CENTER);
+
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        btnPanel.setBackground(UITheme.BG_DEEP());
+
+        GlassButton addBtn = new GlassButton("Add");
+        addBtn.setForeground(UITheme.ACCENT_GREEN);
+        addBtn.addActionListener(e -> {
+            String selected = (String) currBox.getSelectedItem();
+            if (selected != null && !favoriteCurrencies.contains(selected)) {
+                favoriteCurrencies.add(selected);
+                saveHistoryToPrefs();
+                updateFavoritesButtons((JPanel) favoritesPanel.getComponent(1));
+                toast(selected + " added to favorites");
+                dialog.dispose();
+            } else {
+                toast("Currency already in favorites");
+            }
+        });
+
+        GlassButton cancelBtn = new GlassButton("Cancel");
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        btnPanel.add(cancelBtn);
+        btnPanel.add(addBtn);
+
+        dialog.add(panel, BorderLayout.CENTER);
+        dialog.add(btnPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
     }
 
     private JComboBox<String> styledCombo(String[] items) {
         JComboBox<String> cb = new JComboBox<>(items);
         cb.setFont(new Font("Segoe UI", Font.PLAIN, 24));
-        cb.setBackground(UITheme.BG_ELEVATED);
-        cb.setForeground(UITheme.TEXT_PRIMARY);
+        cb.setBackground(UITheme.BG_ELEVATED());
+        cb.setForeground(UITheme.TEXT_PRIMARY());
         cb.setFocusable(false);
         cb.setBorder(new EmptyBorder(8, 12, 8, 12));
         cb.setPreferredSize(new Dimension(138, 58));
@@ -1300,12 +1689,85 @@ public class GlassCalculator extends JFrame {
                 JLabel l = (JLabel) super.getListCellRendererComponent(list, v, i, sel, foc);
                 l.setFont(new Font("Segoe UI", Font.PLAIN, 20));
                 l.setBorder(new EmptyBorder(10, 14, 10, 14));
-                l.setBackground(sel ? UITheme.ACCENT_CYAN : UITheme.BG_ELEVATED);
-                l.setForeground(sel ? UITheme.BG_DEEP : UITheme.TEXT_PRIMARY);
+                l.setBackground(sel ? UITheme.ACCENT_CYAN : UITheme.BG_ELEVATED());
+                l.setForeground(sel ? UITheme.BG_DEEP() : UITheme.TEXT_PRIMARY());
                 return l;
             }
         });
         return cb;
+    }
+
+    private void doLive(boolean commit) {
+        commitFlag = commit;
+        String raw = inputFld.getText().trim();
+        if (raw.isEmpty() || raw.equals("0")) {
+            resultLbl.setText("0");
+            return;
+        }
+        if (!isValidExpression(raw)) {
+            resultLbl.setText("Invalid Input");
+            return;
+        }
+        double amount;
+        try {
+            amount = new ExpressionParser(raw, false).parse();
+        } catch (Exception ex) {
+            try {
+                amount = Double.parseDouble(raw);
+            } catch (Exception e2) {
+                return;
+            }
+        }
+
+        String from = (String) fromBox.getSelectedItem();
+        String to = (String) toBox.getSelectedItem();
+        if (from.equals(to)) {
+            resultLbl.setText(fmt(amount));
+            return;
+        }
+
+        final double finalAmount = amount;
+        double rate = fx.rateOrFetch(from, to,
+                () -> {   // onResult: retry with fresh cache
+                    String f = (String) fromBox.getSelectedItem();
+                    String t2 = (String) toBox.getSelectedItem();
+                    // reuse cached data
+                    double r2 = fx.rateOrFetch(f, t2, () -> {
+                    }, () -> {
+                    });
+                        if (!Double.isNaN(r2)) {
+                            resultLbl.setText(fmt(finalAmount * r2));
+                            String change = fx.getRateChangeDirection(f, t2);
+                            String rateText = String.format("1 %s = %.4f %s", f, r2, t2);
+                            if (!change.isEmpty()) {
+                                rateText += " " + change;
+                            }
+                            statusLbl.setText(rateText + " · " + fx.lastUpdated(f).split(" ")[1]);
+                            if (commitFlag) commitHistory.run();
+                        }
+                },
+                () -> {
+                    resultLbl.setText("Error");
+                    statusLbl.setText("Network error");
+                }
+        );
+
+        if (Double.isNaN(rate)) {
+            resultLbl.setText("Fetching...");
+            statusLbl.setText("Connecting...");
+        } else {
+            resultLbl.setText(fmt(finalAmount * rate));
+
+            // Show rate with change indicator
+            String change = fx.getRateChangeDirection(from, to);
+            String rateText = String.format("1 %s = %.4f %s", from, rate, to);
+            if (!change.isEmpty()) {
+                rateText += " " + change;
+            }
+            statusLbl.setText(rateText + " · " + fx.lastUpdated(from).split(" ")[1]); // Show time only
+
+            if (commit) commitHistory.run();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1317,27 +1779,136 @@ public class GlassCalculator extends JFrame {
     //  MAIN
     // ─────────────────────────────────────────────────────────────────
     public static void main(String[] args) {
-        UIManager.put("swing.boldMetal", Boolean.FALSE);
         SwingUtilities.invokeLater(() -> {
+            // Initialize system theme detection
+            UITheme.initializeSystemTheme();
+            
             try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception ignored) {
+                // Use system look and feel for better OS integration
+                String systemLAF = UIManager.getSystemLookAndFeelClassName();
+                UIManager.setLookAndFeel(systemLAF);
+            } catch (Exception e) {
+                try {
+                    // Fallback to cross-platform if system LAF fails
+                    UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+                } catch (Exception ignored) {}
             }
 
-            // --- Custom Dark Theme ToolTip Styling ---
-            UIManager.put("ToolTip.background", new Color(38, 38, 48)); // Dark elevated background
-            UIManager.put("ToolTip.foreground", Color.WHITE);
+            // --- ToolTip Styling ---
+            UIManager.put("ToolTip.background", UITheme.BG_ELEVATED());
+            UIManager.put("ToolTip.foreground", UITheme.TEXT_PRIMARY());
             UIManager.put("ToolTip.font", new Font("Segoe UI", Font.PLAIN, 14));
             UIManager.put("ToolTip.border", BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(255, 255, 255, 40), 1),
-                    BorderFactory.createEmptyBorder(6, 12, 6, 12) // Inner padding
+                    BorderFactory.createLineBorder(UITheme.GLASS_BORDER(), 1),
+                    BorderFactory.createEmptyBorder(6, 12, 6, 12)
             ));
 
-            // Make tooltips appear faster and stay visible longer
-            ToolTipManager.sharedInstance().setInitialDelay(250); // Show after 250ms
-            ToolTipManager.sharedInstance().setDismissDelay(15000); // Stay for 15s
+            System.out.println("App starting. First run: " + AppConfig.isFirstRun() + 
+                             ", Setup complete: " + AppConfig.isSetupComplete() +
+                             ", Dark mode: " + UITheme.isDarkMode());
+            
+            if (AppConfig.isFirstRun()) {
+                System.out.println("Showing setup wizard...");
+                JFrame tempFrame = new JFrame();
+                tempFrame.setUndecorated(true);
+                tempFrame.pack();
+                tempFrame.setLocationRelativeTo(null);
 
-            new GlassCalculator().setVisible(true);
+                SetupWizard wizard = new SetupWizard(tempFrame);
+                wizard.setModal(true);
+                wizard.setVisible(true);
+                System.out.println("Wizard closed. Proceeding to calculator...");
+
+                try {
+                    GlassCalculator calc = new GlassCalculator();
+                    calc.setVisible(true);
+                    System.out.println("Calculator window shown.");
+                } catch (Exception e) {
+                    System.out.println("Error creating calculator: " + e.getMessage());
+                    e.printStackTrace();
+                }
+
+                tempFrame.dispose();
+            } else {
+                System.out.println("Not first run, opening calculator directly.");
+                new GlassCalculator().setVisible(true);
+            }
         });
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  THEME & STATUS REFRESH METHODS
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Refresh the UI theme after theme change
+     */
+    private void refreshTheme() {
+        // Rebuild the UI with new theme
+        SwingUtilities.invokeLater(() -> {
+            try {
+                // Update all components that use theme colors
+                getContentPane().setBackground(UITheme.BG_DEEP());
+                display.setBackground(UITheme.DISPLAY_BG());
+                display.setForeground(UITheme.TEXT_PRIMARY());
+
+                // Update status bar colors
+                statusDB.setForeground(UITheme.ACCENT_RED);
+                statusAngle.setForeground(UITheme.TEXT_DIM());
+                statusMem.setForeground(UITheme.TEXT_DIM());
+
+                // Update button panel background
+                buttonPanel.setBackground(UITheme.BG_SURFACE());
+
+                // Repaint all components
+                repaint();
+                revalidate();
+
+                System.out.println("✅ Theme refreshed: " + UITheme.getThemeName());
+            } catch (Exception e) {
+                System.err.println("⚠️ Error refreshing theme: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Refresh the status bar with current values
+     */
+    public void refreshStatusBar() {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                // Update memory display
+                statusMem.setText("M: " + (memory == 0 ? "0" : fmt(memory)));
+                statusMem.setForeground(memory == 0 ? UITheme.TEXT_DIM() : UITheme.ACCENT_AMBER);
+
+                // Update angle mode display
+                statusAngle.setText(radianMode ? "RAD" : "DEG");
+                statusAngle.setForeground(UITheme.TEXT_DIM());
+
+                // Update database status
+                statusDB.setForeground(db.isReady() ? UITheme.ACCENT_GREEN : UITheme.ACCENT_RED);
+                statusStorage.setForeground(db.isReady() ? UITheme.ACCENT_GREEN : UITheme.TEXT_DIM());
+
+            } catch (Exception e) {
+                System.err.println("⚠️ Error refreshing status bar: " + e.getMessage());
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  DPI SCALING UTILITY
+    // ─────────────────────────────────────────────────────────────────
+    private double getDPIScale() {
+        try {
+            GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            GraphicsDevice gd = ge.getDefaultScreenDevice();
+            GraphicsConfiguration gc = gd.getDefaultConfiguration();
+            AffineTransform at = gc.getDefaultTransform();
+            double scaleX = at.getScaleX();
+            double scaleY = at.getScaleY();
+            return Math.max(scaleX, scaleY);
+        } catch (Exception e) {
+            return 1.0; // Default scale if detection fails
+        }
     }
 }

@@ -1,24 +1,25 @@
 package Project.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import javax.swing.*;
-import java.util.prefs.*;
+import Project.config.AppConfig;
 
+/**
+ * Currency exchange service with secure API key management.
+ * Fetches real-time exchange rates from exchangerate-api.com.
+ * Uses AppConfig for secure API key storage.
+ *
+ * @author GlassCalculator Team
+ * @version 1.0
+ */
 public final class CurrencyService {
-    private static final Logger logger = LoggerFactory.getLogger(CurrencyService.class);
-
     private static final long CACHE_TTL_MS = 300_000L; // 5 minutes
-    private static final int TIMEOUT_MS = 10_000; // Increased timeout
-    private static final int DEBOUNCE_DELAY_MS = 350;
+    private static final int TIMEOUT_MS = 8_000;
 
     private record CachedRates(Map<String, Double> rates,
                                String updatedUtc,
@@ -29,8 +30,8 @@ public final class CurrencyService {
     }
 
     private final Map<String, CachedRates> cache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Double>> previousRates = new ConcurrentHashMap<>();
     private final AtomicBoolean fetching = new AtomicBoolean(false);
-    // Debouncer: cancels pending update if user keeps typing
     private final ScheduledExecutorService debouncer =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "Currency-Debounce");
@@ -39,16 +40,34 @@ public final class CurrencyService {
             });
     private ScheduledFuture<?> pending;
 
+    // Flag to track if API is available
+    private volatile boolean apiConfigured = false;
+
+    public CurrencyService() {
+        this.apiConfigured = AppConfig.isApiKeyConfigured();
+        if (!apiConfigured) {
+            System.out.println("ℹ️ Currency API not configured. Users can add it later.");
+        }
+    }
+
     /**
      * Returns cached rate immediately if fresh; otherwise returns NaN
      * and fires a background fetch that calls onResult when done.
      */
     public double rateOrFetch(String from, String to,
                        Runnable onResult, Runnable onError) {
+        // If API not configured, return NaN
+        if (!apiConfigured) {
+            System.err.println("⚠️ Currency API key not configured");
+            SwingUtilities.invokeLater(onError);
+            return Double.NaN;
+        }
+
         CachedRates cr = cache.get(from);
         if (cr != null && !cr.isExpired()) {
             return cr.rates.getOrDefault(to, Double.NaN);
         }
+
         if (fetching.compareAndSet(false, true)) {
             new SwingWorker<CachedRates, Void>() {
                 @Override
@@ -60,13 +79,20 @@ public final class CurrencyService {
                 protected void done() {
                     fetching.set(false);
                     try {
-                        cache.put(from, get());
+                        CachedRates newRates = get();
+                        // Store previous rates before updating cache
+                        CachedRates oldRates = cache.get(from);
+                        if (oldRates != null) {
+                            previousRates.put(from, new HashMap<>(oldRates.rates()));
+                        }
+                        cache.put(from, newRates);
                         SwingUtilities.invokeLater(onResult);
-                    } catch (Exception e) {
-                        SwingUtilities.invokeLater(onError);
-                    }
-                }
-            }.execute();
+                     } catch (Exception e) {
+                         System.err.println("⚠️ Failed to fetch rates: " + e.getMessage());
+                         SwingUtilities.invokeLater(onError);
+                     }
+                 }
+             }.execute();
         }
         return Double.NaN; // signal: not cached yet
     }
@@ -85,56 +111,114 @@ public final class CurrencyService {
         return cr != null ? cr.updatedUtc() : "—";
     }
 
+    /**
+     * Returns the rate change direction: "↑" for increase, "↓" for decrease, "" for no change
+     */
+    public String getRateChangeDirection(String from, String to) {
+        Map<String, Double> prev = previousRates.get(from);
+        CachedRates current = cache.get(from);
+
+        if (prev == null || current == null) return "";
+
+        Double prevRate = prev.get(to);
+        Double currRate = current.rates().get(to);
+
+        if (prevRate == null || currRate == null) return "";
+
+        if (currRate > prevRate) return "↑";
+        if (currRate < prevRate) return "↓";
+        return "";
+    }
+
     public void shutdown() {
         debouncer.shutdown();
     }
 
+    /**
+     * Fetches exchange rates from the API using secure credentials.
+     */
     private CachedRates fetchRates(String base) throws Exception {
-        String apiKey = System.getenv("EXCHANGE_API_KEY");
-        if (apiKey == null || apiKey.trim().isEmpty()) {
-            throw new IllegalStateException("EXCHANGE_API_KEY environment variable must be set for currency conversion.");
+        String apiKey = AppConfig.getApiKey();
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalStateException("API key not configured");
         }
+
         URL url = new URL("https://v6.exchangerate-api.com/v6/" + apiKey + "/latest/" + base);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        StringBuilder sb = new StringBuilder();
+
         try {
             c.setRequestMethod("GET");
             c.setConnectTimeout(TIMEOUT_MS);
             c.setReadTimeout(TIMEOUT_MS);
             c.setRequestProperty("Accept", "application/json");
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()))) {
+            c.setRequestProperty("User-Agent", "GlassCalculator/1.0");
+
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = br.readLine()) != null) sb.append(line);
+                while ((line = br.readLine()) != null) {
+                    sb.append(line);
+                }
             }
+
+            return parseJson(sb.toString());
         } finally {
             c.disconnect();
         }
-        return parseJson(sb.toString());
     }
 
     /**
-     * Parse JSON response using Jackson.
+     * Lightweight JSON parser — no external dependency needed.
+     * NOTE: For production, consider using Gson or Jackson library.
      */
     private CachedRates parseJson(String json) {
-        ObjectMapper mapper = new ObjectMapper();
-        try {
-            JsonNode root = mapper.readTree(json);
-            Map<String, Double> rates = new LinkedHashMap<>();
-            JsonNode ratesNode = root.get("conversion_rates");
-            if (ratesNode != null && ratesNode.isObject()) {
-                ratesNode.fields().forEachRemaining(entry -> {
-                    String key = entry.getKey();
-                    JsonNode valueNode = entry.getValue();
-                    if (valueNode.isNumber()) {
-                        rates.put(key, valueNode.asDouble());
+        Map<String, Double> rates = new LinkedHashMap<>();
+        int rStart = json.indexOf("\"conversion_rates\":{");
+        if (rStart != -1) {
+            int open = json.indexOf('{', rStart);
+            int close = json.indexOf('}', open);
+            String block = json.substring(open + 1, close);
+            for (String kv : block.split(",")) {
+                String[] parts = kv.trim().split(":", 2);
+                if (parts.length == 2) {
+                    String key = parts[0].replace("\"", "").trim();
+                    try {
+                        rates.put(key, Double.parseDouble(parts[1].trim()));
+                    } catch (NumberFormatException ignored) {
                     }
-                });
+                }
             }
-            String utc = root.has("time_last_update_utc") ? root.get("time_last_update_utc").asText() : "Unknown";
-            return new CachedRates(Collections.unmodifiableMap(rates), utc, System.currentTimeMillis());
-        } catch (Exception e) {
-            logger.error("Failed to parse JSON: {}", e.getMessage());
-            return new CachedRates(Collections.emptyMap(), "Error", System.currentTimeMillis());
+        }
+        String utc = "Unknown";
+        int uIdx = json.indexOf("\"time_last_update_utc\":\"");
+        if (uIdx != -1) {
+            int vs = uIdx + "\"time_last_update_utc\":\"".length();
+            int ve = json.indexOf('"', vs);
+            if (ve != -1) utc = json.substring(vs, ve);
+        }
+        return new CachedRates(Collections.unmodifiableMap(rates), utc,
+                System.currentTimeMillis());
+    }
+
+    /**
+     * Checks if currency service is available.
+     * @return true if API key is configured, false otherwise
+     */
+    public boolean isAvailable() {
+        return apiConfigured && AppConfig.isApiKeyConfigured();
+    }
+
+    /**
+     * Configures the API key and enables the service.
+     * @param apiKey The API key from exchangerate-api.com
+     */
+    public void configureApiKey(String apiKey) {
+        if (apiKey != null && !apiKey.isEmpty()) {
+            AppConfig.setApiKey(apiKey);
+            this.apiConfigured = true;
+            System.out.println("✅ Currency API configured");
         }
     }
 }
