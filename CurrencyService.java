@@ -1,5 +1,10 @@
 package Project.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -9,8 +14,11 @@ import javax.swing.*;
 import java.util.prefs.*;
 
 public final class CurrencyService {
+    private static final Logger logger = LoggerFactory.getLogger(CurrencyService.class);
+
     private static final long CACHE_TTL_MS = 300_000L; // 5 minutes
-    private static final int TIMEOUT_MS = 8_000;
+    private static final int TIMEOUT_MS = 10_000; // Increased timeout
+    private static final int DEBOUNCE_DELAY_MS = 350;
 
     private record CachedRates(Map<String, Double> rates,
                                String updatedUtc,
@@ -82,51 +90,51 @@ public final class CurrencyService {
     }
 
     private CachedRates fetchRates(String base) throws Exception {
-        String apiKey = Preferences.userRoot().get("calc_api_key", "97ab7ceab50c9baf51e43393");
+        String apiKey = System.getenv("EXCHANGE_API_KEY");
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            throw new IllegalStateException("EXCHANGE_API_KEY environment variable must be set for currency conversion.");
+        }
         URL url = new URL("https://v6.exchangerate-api.com/v6/" + apiKey + "/latest/" + base);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setRequestMethod("GET");
-        c.setConnectTimeout(TIMEOUT_MS);
-        c.setReadTimeout(TIMEOUT_MS);
-        c.setRequestProperty("Accept", "application/json");
         StringBuilder sb = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()))) {
-            String line;
-            while ((line = br.readLine()) != null) sb.append(line);
+        try {
+            c.setRequestMethod("GET");
+            c.setConnectTimeout(TIMEOUT_MS);
+            c.setReadTimeout(TIMEOUT_MS);
+            c.setRequestProperty("Accept", "application/json");
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+            }
+        } finally {
+            c.disconnect();
         }
-        c.disconnect();
         return parseJson(sb.toString());
     }
 
     /**
-     * Lightweight JSON parser — no external dependency needed.
+     * Parse JSON response using Jackson.
      */
     private CachedRates parseJson(String json) {
-        Map<String, Double> rates = new LinkedHashMap<>();
-        int rStart = json.indexOf("\"conversion_rates\":{");
-        if (rStart != -1) {
-            int open = json.indexOf('{', rStart);
-            int close = json.indexOf('}', open);
-            String block = json.substring(open + 1, close);
-            for (String kv : block.split(",")) {
-                String[] parts = kv.trim().split(":", 2);
-                if (parts.length == 2) {
-                    String key = parts[0].replace("\"", "").trim();
-                    try {
-                        rates.put(key, Double.parseDouble(parts[1].trim()));
-                    } catch (NumberFormatException ignored) {
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            JsonNode root = mapper.readTree(json);
+            Map<String, Double> rates = new LinkedHashMap<>();
+            JsonNode ratesNode = root.get("conversion_rates");
+            if (ratesNode != null && ratesNode.isObject()) {
+                ratesNode.fields().forEachRemaining(entry -> {
+                    String key = entry.getKey();
+                    JsonNode valueNode = entry.getValue();
+                    if (valueNode.isNumber()) {
+                        rates.put(key, valueNode.asDouble());
                     }
-                }
+                });
             }
+            String utc = root.has("time_last_update_utc") ? root.get("time_last_update_utc").asText() : "Unknown";
+            return new CachedRates(Collections.unmodifiableMap(rates), utc, System.currentTimeMillis());
+        } catch (Exception e) {
+            logger.error("Failed to parse JSON: {}", e.getMessage());
+            return new CachedRates(Collections.emptyMap(), "Error", System.currentTimeMillis());
         }
-        String utc = "Unknown";
-        int uIdx = json.indexOf("\"time_last_update_utc\":\"");
-        if (uIdx != -1) {
-            int vs = uIdx + "\"time_last_update_utc\":\"".length();
-            int ve = json.indexOf('"', vs);
-            if (ve != -1) utc = json.substring(vs, ve);
-        }
-        return new CachedRates(Collections.unmodifiableMap(rates), utc,
-                System.currentTimeMillis());
     }
 }
