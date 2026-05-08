@@ -548,9 +548,18 @@ public class GlassCalculator extends JFrame {
         }
     }
 
+    private boolean isValidExpression(String expr) {
+        if (expr.length() > 1000) return false; // Prevent DoS
+        return expr.matches("[0-9a-zA-Z.+\\-*/^()√πe\\s]+");
+    }
+
     private void evaluate() {
         String cur = display.getText().trim();
         if (cur.isEmpty()) return;
+        if (!isValidExpression(cur)) {
+            display.setText("Invalid Input");
+            return;
+        }
         try {
             double result = eval(cur);
             String fmtResult = fmt(result);
@@ -1137,6 +1146,10 @@ public class GlassCalculator extends JFrame {
                 resultLbl.setText("0");
                 return;
             }
+            if (!isValidExpression(raw)) {
+                resultLbl.setText("Invalid Input");
+                return;
+            }
             double amount;
             try {
                 amount = new ExpressionParser(raw, false).parse();
@@ -1206,20 +1219,29 @@ public class GlassCalculator extends JFrame {
                     case "%" -> {
                         try {
                             inputFld.setText(fmt(new ExpressionParser(cur, false).parse() / 100));
-                        } catch (Exception ig) {
+                        } catch (ArithmeticException e) {
+                            resultLbl.setText("Invalid expression");
+                        } catch (Exception e) {
+                            resultLbl.setText("Error");
                         }
                     }
                     case "+/-" -> {
                         try {
                             inputFld.setText(fmt(-new ExpressionParser(cur, false).parse()));
-                        } catch (Exception ig) {
+                        } catch (ArithmeticException e) {
+                            resultLbl.setText("Invalid expression");
+                        } catch (Exception e) {
+                            resultLbl.setText("Error");
                         }
                     }
                     case "÷", "×", "−", "+" -> inputFld.setText(cur + k);
                     case "=" -> {
                         try {
                             inputFld.setText(fmt(new ExpressionParser(cur.replace("÷", "/").replace("×", "*").replace("−", "-"), false).parse()));
-                        } catch (Exception ig) {
+                        } catch (ArithmeticException e) {
+                            resultLbl.setText("Error: " + e.getMessage());
+                        } catch (Exception e) {
+                            resultLbl.setText("Error");
                         }
                     }
                     default -> {
