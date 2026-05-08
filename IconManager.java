@@ -12,9 +12,9 @@ public final class IconManager {
     public static void setAppIcon(JFrame frame) {
         java.util.List<Image> icons = new java.util.ArrayList<>();
 
-        // 1. Try as resource in the same package (AppIcon.png in Project/)
+        // 1. Try as resource in the classpath root
         try {
-            URL url = IconManager.class.getResource("../AppIcon.png");
+            URL url = IconManager.class.getResource("/AppIcon.png");
             if (url != null) {
                 Image img = Toolkit.getDefaultToolkit().getImage(url);
                 icons.add(img);
