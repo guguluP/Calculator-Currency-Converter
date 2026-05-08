@@ -2,19 +2,29 @@ package Project.model;
 
 import java.util.function.*;
 
+/**
+ * A recursive descent parser for mathematical expressions.
+ * Supports arithmetic operations, trigonometric functions, and constants.
+ */
 public final class ExpressionParser {
     private final String expr;
     private final boolean radians;
     private int pos;
 
     public ExpressionParser(String expression, boolean radians) {
-        // Normalise operators to ASCII
+        // Normalise operators to ASCII and remove spaces
         this.expr = expression.trim()
-                .replace('×', '*').replace('÷', '/').replace('−', '-');
+                .replace('×', '*').replace('÷', '/').replace('−', '-')
+                .replaceAll("\\s+", ""); // remove all whitespace
         this.radians = radians;
         this.pos = 0;
     }
 
+    /**
+     * Parses the expression and returns the result.
+     * @return the computed value
+     * @throws ArithmeticException if parsing fails or division by zero occurs
+     */
     public double parse() throws ArithmeticException {
         double v = addSub();
         if (pos < expr.length()) throw new ArithmeticException(
